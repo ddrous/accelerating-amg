@@ -18,3 +18,7 @@ ENV/
 env.bak/
 venv.bak/
 
+# Pytorch stuff
+data/*
+models/*
+
