@@ -21,4 +21,5 @@ venv.bak/
 # Pytorch stuff
 data/*
 models/*
+!models/README.md
 

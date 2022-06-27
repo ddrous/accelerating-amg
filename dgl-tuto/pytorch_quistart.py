@@ -47,7 +47,7 @@ class NeuralNetwork(nn.Module):
         super().__init__()
         self.flatten = nn.Flatten()
         self.linear_relu_stack = nn.Sequential(
-            nn.Linear(28*28, 512),
+            nn.Linear(28*28, 512),          ## This is a bit reckless! 28*28 should be asked in init()
             nn.ReLU(),
             nn.Linear(512, 512),
             nn.ReLU(),
@@ -102,17 +102,17 @@ def test(dataloader, model, loss_fn):
 
 
 epochs = 5
-# for t in range(epochs):
-#     print(f"Epoch {t+1}\n-------------------------------")
-#     train(train_dataloader, model, loss_fn, optimizer)
-#     test(test_dataloader, model, loss_fn)
+for t in range(epochs):
+    print(f"Epoch {t+1}\n-------------------------------")
+    train(train_dataloader, model, loss_fn, optimizer)
+    test(test_dataloader, model, loss_fn)
 print("Done!")
 
 torch.save(model.state_dict(), "models/model.pth")
 print("Saved PyTorch Model State to models/model.pth")
 
-model = NeuralNetwork()
-model.load_state_dict(torch.load("models/model.pth"))
+# model = NeuralNetwork()
+# model.load_state_dict(torch.load("models/model.pth"))
 
 classes = [
     "T-shirt/top",
