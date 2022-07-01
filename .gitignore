@@ -27,3 +27,6 @@ models/*
 results/*
 tb_dir/*
 __pycache__/*
+source/results/*
+source/tb_dir/*
+source/__pycache__/*

@@ -1,6 +1,8 @@
+from distutils.command.config import config
 import math
 from collections import defaultdict
 from functools import lru_cache
+from unicodedata import name
 
 import matlab
 import meshpy.triangle as triangle
@@ -208,6 +210,9 @@ def generate_A_spec_cluster(num_unknowns, add_diag=False, num_clusters=2, unit_s
 def generate_A_delaunay_block_periodic_lognormal(num_unknowns_per_block, root_num_blocks, matlab_engine):
     """Poisson equation on triangular mesh, with lognormal coefficients, and block periodic boundary conditions"""
     # points are correct only for 3x3 number of blocks
+    print("Types")
+    print(type(num_unknowns_per_block), type(root_num_blocks))
+    print(matlab_engine.which("block_periodic_delaunay.m"))
     A_matlab, points_matlab = matlab_engine.block_periodic_delaunay(num_unknowns_per_block, root_num_blocks, nargout=2)
     A_numpy = np.array(A_matlab._data).reshape(A_matlab.size, order='F')
     points_numpy = np.array(points_matlab._data).reshape(points_matlab.size, order='F')
@@ -456,3 +461,25 @@ def drop_row_col_matlab(A, indices, matlab_engine):
     rows, cols, values = rows.T[0], cols.T[0], values.T[0]
     rows, cols = rows.astype(np.int), cols.astype(np.int)
     return csr_matrix((values, (rows, cols)))
+
+
+if __name__ == "__main__":
+
+    import configs
+    import matlab.engine
+
+    matlab_engine = matlab.engine.start_matlab()
+    config = configs.GRAPH_LAPLACIAN_TRAIN_CREATE_DATA
+    print(config)
+
+    data_config = config.data_config
+    num_As = 2
+
+    As = [generate_A(data_config.num_unknowns,
+                        data_config.dist,
+                        data_config.block_periodic,
+                        data_config.root_num_blocks,
+                        add_diag=data_config.add_diag,
+                        matlab_engine=matlab_engine) for _ in range(num_As)]
+
+    print(As)

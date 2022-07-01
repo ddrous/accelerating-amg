@@ -1,7 +1,7 @@
 class DataConfig:
     def __init__(self, dist='lognormal_laplacian_periodic', block_periodic=True,
                 #  num_unknowns=8 ** 2, root_num_blocks=4, splitting='CLJP', add_diag=False,
-                 num_unknowns=2 ** 2, root_num_blocks=2, splitting='CLJP', add_diag=False,
+                 num_unknowns=2 ** 2, root_num_blocks=4, splitting='CLJP', add_diag=False,
                  load_data=True, save_data=False):
         self.dist = dist  # see function 'generate_A()' for possible distributions
         self.block_periodic = block_periodic
@@ -113,6 +113,7 @@ GRAPH_LAPLACIAN_TRAIN.data_config.dist = 'lognormal_laplacian_periodic'
 GRAPH_LAPLACIAN_TRAIN_CREATE_DATA = Config()
 GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.data_config.dist = 'lognormal_laplacian_periodic'
 GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.data_config.load_data = False
+GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.data_config.save_data = True
 
 GRAPH_LAPLACIAN_ABLATION_MP2 = Config()
 GRAPH_LAPLACIAN_ABLATION_MP2.data_config.dist = 'lognormal_laplacian_periodic'
