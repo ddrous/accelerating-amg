@@ -23,3 +23,7 @@ data/*
 models/*
 !models/README.md
 
+# From Luz et al
+results/*
+tb_dir/*
+__pycache__/*
