@@ -22,7 +22,7 @@ def relaxation_matrices(As, tensor=False):
                                                   upper=False))
     else:
         for i in range(num_As):
-            res.append(scipy.sparse.linalg.spsolve_triangular(a=As[i].toarray(),
+            res.append(scipy.linalg.solve_triangular(a=As[i].toarray(),         ## <---- MAKE THIS EFFICIENT
                                                      b=-Bs[i],
                                                      lower=True, unit_diagonal=False,
                                                      overwrite_b=True, debug=None, check_finite=False).astype(

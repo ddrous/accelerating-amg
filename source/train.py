@@ -8,9 +8,6 @@ import matlab.engine
 import numpy as np
 import pyamg
 import torch
-# import tensorflow as tf
-# import tensorflow.compat.v1 as tf
-# tf.disable_v2_behavior() 
 from pyamg.classical.interpolate import direct_interpolation
 from scipy.sparse import csr_matrix
 from tqdm import tqdm
@@ -18,7 +15,7 @@ from tqdm import tqdm
 import configs
 from data import generate_A
 from dataset import DataSet
-# from model import csrs_to_graphs_tuple, create_model, graphs_tuple_to_sparse_matrices, to_prolongation_matrix_tensor
+from model import csrs_to_dgl_dataset, create_model, graphs_tuple_to_sparse_matrices, to_prolongation_matrix_tensor
 from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
     two_grid_error_matrix, compute_coarse_A
 from relaxation import relaxation_matrices
@@ -81,7 +78,8 @@ def create_dataset_from_As(As, data_config):
             C = orig_solvers[i].levels[0].C     ## classical_strength_of_connection between nodes
             # print("Coarse nodes?", C)
             P = direct_interpolation(A, C, repeated_splitting)
-            baseline_P_list.append(torch.as_tensor(P.toarray(), dtype=torch.float64))
+            baseline_P_list.append(P)
+            # baseline_P_list.append(torch.as_tensor(P.toarray(), dtype=torch.float64))
 
         coarse_nodes_list = [np.nonzero(splitting)[0] for splitting in splittings]
 
@@ -89,7 +87,7 @@ def create_dataset_from_As(As, data_config):
         solvers = [pyamg.ruge_stuben_solver(A, max_levels=2, keep=True, CF=data_config.splitting)
                    for A in As]
         baseline_P_list = [solver.levels[0].P for solver in solvers]
-        baseline_P_list = [torch.as_tensor(P.toarray(), dtype=torch.float64) for P in baseline_P_list]
+        # baseline_P_list = [torch.as_tensor(P.toarray(), dtype=torch.float64) for P in baseline_P_list]
         splittings = [solver.levels[0].splitting for solver in solvers]
         coarse_nodes_list = [np.nonzero(splitting)[0] for splitting in splittings]
 
@@ -330,26 +328,38 @@ def create_coarse_dataset(fine_dataset, model, data_config, run_config, matlab_e
 def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACIAN_EVAL', seed=1):
     config = getattr(configs, config)
     # config = getattr(configs, 'GRAPH_LAPLACIAN_TRAIN')        ## Use this to avoid recreating the dataset all the time
-    eval_config = getattr(configs, eval_config)
+    eval_config = getattr(configs, 'GRAPH_LAPLACIAN_TRAIN_CREATE_DATA')
+    # eval_config = getattr(configs, eval_config)
     eval_config.run_config = config.run_config
 
     matlab_engine = matlab.engine.start_matlab()
 
     # fix random seeds for reproducibility
     np.random.seed(seed)
-    tf.random.set_seed(seed)
+    torch.manual_seed(seed)
     matlab_engine.eval(f'rng({seed})')
 
     batch_size = min(config.train_config.samples_per_run, config.train_config.batch_size)
 
     # we measure the performance of the model over time on one larger instance that is not optimized for
-    eval_dataset = create_dataset(1, eval_config.data_config)
-    eval_A_graphs_tuple = csrs_to_graphs_tuple(eval_dataset.As, matlab_engine,
+    # eval_dataset = create_dataset(1, eval_config.data_config)
+    eval_dataset = create_dataset(2, config.data_config, run=0, matlab_engine=matlab_engine)
+
+    # eval_A_graphs_tuple = csrs_to_graphs_tuple(eval_dataset.As, matlab_engine,
+    #                                            coarse_nodes_list=eval_dataset.coarse_nodes_list,
+    #                                            baseline_P_list=eval_dataset.baseline_P_list,
+    #                                            node_indicators=eval_config.run_config.node_indicators,
+    #                                            edge_indicators=eval_config.run_config.edge_indicators
+    #                                            )
+    
+    eval_A_graphs_tuple = csrs_to_dgl_dataset(eval_dataset.As, matlab_engine,
                                                coarse_nodes_list=eval_dataset.coarse_nodes_list,
                                                baseline_P_list=eval_dataset.baseline_P_list,
                                                node_indicators=eval_config.run_config.node_indicators,
                                                edge_indicators=eval_config.run_config.edge_indicators
                                                )
+
+    assert 1==2, "Stop here"
 
     if config.train_config.load_model:
         raise NotImplementedError()
@@ -414,33 +424,33 @@ if __name__ == '__main__':
     # tf_config = tf.compat.v1.ConfigProto()
     # tf_config.gpu_options.allow_growth = True
     # tf.compat.v1.enable_eager_execution(config=tf_config)
-
-    # fire.Fire(train)
-
     np.set_printoptions(precision=2)
 
-    matlab_engine = matlab.engine.start_matlab()
-    # matlab_engine = None
-    config = configs.GRAPH_LAPLACIAN_TRAIN_CREATE_DATA
+    fire.Fire(train)
 
-    data_config = config.data_config
-    num_As = 2
 
-    As = [generate_A(data_config.num_unknowns,
-                        data_config.dist,
-                        data_config.block_periodic,
-                        data_config.root_num_blocks,
-                        add_diag=data_config.add_diag,
-                        matlab_engine=matlab_engine) for _ in range(num_As)]
+    # matlab_engine = matlab.engine.start_matlab()
+    # # matlab_engine = None
+    # config = configs.GRAPH_LAPLACIAN_TRAIN_CREATE_DATA
 
-    view=10
-    print()
-    # print(As[0].toarray()[:view,:view])
-    B= np.load('../data/periodic_delaunay_num_As_2_num_points_4_rnb_4_epoch_0.npy', allow_pickle=True)
-    # print(B[1].toarray()[:view,:view])
+    # data_config = config.data_config
+    # num_As = 2
 
-    dataset = create_dataset(num_As, data_config, run=0, matlab_engine=matlab_engine)
-    # toprint = dataset.As[0].todense()[:view, :view].view()
-    toprint = dataset.coarse_nodes_list[0]
-    print(toprint)
+    # As = [generate_A(data_config.num_unknowns,
+    #                     data_config.dist,
+    #                     data_config.block_periodic,
+    #                     data_config.root_num_blocks,
+    #                     add_diag=data_config.add_diag,
+    #                     matlab_engine=matlab_engine) for _ in range(num_As)]
+
+    # view=10
+    # print()
+    # # print(As[0].toarray()[:view,:view])
+    # B= np.load('../data/periodic_delaunay_num_As_2_num_points_4_rnb_4_epoch_0.npy', allow_pickle=True)
+    # # print(B[1].toarray()[:view,:view])
+
+    # dataset = create_dataset(num_As, data_config, run=0, matlab_engine=matlab_engine)
+    # # toprint = dataset.As[0].todense()[:view, :view].view()
+    # toprint = dataset.baseline_P_list[0]
+    # # print(toprint)
 

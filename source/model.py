@@ -1,11 +1,13 @@
-import graph_nets as gn
+# import graph_nets as gn
+import dgl
 import matlab
 import numpy as np
-import tensorflow as tf
+# import tensorflow as tf
+import torch
 from scipy.sparse import csr_matrix
 
 from data import As_poisson_grid
-from graph_net_model import EncodeProcessDecodeNonRecurrent
+# from graph_net_model import EncodeProcessDecodeNonRecurrent
 
 
 def get_model(model_name, model_config, run_config, matlab_engine, train=False, train_config=None):
@@ -60,6 +62,17 @@ def create_model(model_config):
                                                latent_size=model_config.latent_size,
                                                num_layers=model_config.mlp_layers,
                                                concat_encoder=model_config.concat_encoder)
+
+
+def csrs_to_dgl_dataset(csrs, matlab_engine, node_feature_size=128, coarse_nodes_list=None, baseline_P_list=None,
+                         node_indicators=True, edge_indicators=True):
+
+     for csr, coarse_nodes, baseline_P in zip(csrs, coarse_nodes_list, baseline_P_list):
+        baseline_P_rows, baseline_P_cols = P_square_sparsity_pattern(baseline_P, baseline_P.shape[0],
+                                                                            coarse_nodes, matlab_engine)
+        
+        print("Baseline P rows")
+        print(len(baseline_P_rows))
 
 
 def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_nodes_list=None, baseline_P_list=None,
