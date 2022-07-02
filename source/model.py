@@ -1,5 +1,6 @@
 # import graph_nets as gn
 import dgl
+from dgl.data import DGLDataset
 import matlab
 import numpy as np
 # import tensorflow as tf
@@ -68,11 +69,44 @@ def csrs_to_dgl_dataset(csrs, matlab_engine, node_feature_size=128, coarse_nodes
                          node_indicators=True, edge_indicators=True):
 
      for csr, coarse_nodes, baseline_P in zip(csrs, coarse_nodes_list, baseline_P_list):
+
+        ## Edge features
         baseline_P_rows, baseline_P_cols = P_square_sparsity_pattern(baseline_P, baseline_P.shape[0],
                                                                             coarse_nodes, matlab_engine)
         
-        print("Baseline P rows")
-        print(len(baseline_P_rows))
+
+        ## Node features
+        ## Only coarse nodes
+
+        print("Baseline P:", baseline_P.shape)
+        print("Baseline P rows:", len(baseline_P_rows))
+
+
+class AMGDataset(DGLDataset):
+    def __init__(self, data):
+        self.data = data
+        super(AMGDataset, self).__init__(name='amg')
+
+    def process(self):
+        As = self.data.As
+        Ss = self.data.Ss
+        coarse_nodes_list = self.data.coarse_nodes_list
+        baseline_Ps = self.data.baseline_P_list
+        sparsity_patterns = self.data.sparsity_patterns
+
+        self.num_graphs = len(As)
+        self.graphs = []
+        for i in range(self.num_graphs):
+            g = dgl.from_scipy(As[i], eweight_name='A')
+            self.graphs.append(g)
+
+
+    def __getitem__(self, i):
+        return self.graphs[i]
+
+    def __len__(self):
+        return self.num_graphs
+
 
 
 def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_nodes_list=None, baseline_P_list=None,
@@ -155,17 +189,6 @@ def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_node
     return graphs_tuple
 
 
-def P_square_sparsity_pattern(P, size, coarse_nodes, matlab_engine):
-    P_coo = P.tocoo()
-    P_rows = matlab.double((P_coo.row + 1).astype(np.float64))
-    P_cols = matlab.double((P_coo.col + 1).astype(np.float64))
-    P_values = matlab.double(P_coo.data)
-    coarse_nodes = matlab.double((coarse_nodes + 1).astype(np.float64))
-    rows, cols = matlab_engine.square_P(P_rows, P_cols, P_values, size, coarse_nodes,  nargout=2)
-    rows = np.array(rows._data).reshape(rows.size, order='F') - 1
-    cols = np.array(cols._data).reshape(cols.size, order='F') - 1
-    rows, cols = rows.T[0], cols.T[0]
-    return rows, cols
 
 
 def graphs_tuple_to_sparse_tensor(graphs_tuple):

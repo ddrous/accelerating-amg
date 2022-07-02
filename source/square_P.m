@@ -8,4 +8,3 @@ P_square = sparse(total_size, total_size);
 P_square(:, coarse_nodes) = P;
 [rows, cols] = find(P_square);
 end
-

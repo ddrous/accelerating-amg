@@ -15,9 +15,9 @@ from tqdm import tqdm
 import configs
 from data import generate_A
 from dataset import DataSet
-from model import csrs_to_dgl_dataset, create_model, graphs_tuple_to_sparse_matrices, to_prolongation_matrix_tensor
+from model import csrs_to_dgl_dataset, create_model, graphs_tuple_to_sparse_matrices, to_prolongation_matrix_tensor, AMGDataset
 from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
-    two_grid_error_matrix, compute_coarse_A
+    two_grid_error_matrix, compute_coarse_A, P_square_sparsity_pattern
 from relaxation import relaxation_matrices
 from utils import create_results_dir, write_config_file, most_frequent_splitting, chunks
 
@@ -47,11 +47,12 @@ def create_dataset(num_As, data_config, run=0, matlab_engine=None):
         As_filename = f"../data/periodic_delaunay_num_As_{num_As}_num_points_{data_config.num_unknowns}" \
             f"_rnb_{data_config.root_num_blocks}_epoch_{run}.npy"
         np.save(As_filename, As)
-    return create_dataset_from_As(As, data_config)
+    return create_dataset_from_As(As, data_config, matlab_engine)
 
 
-def create_dataset_from_As(As, data_config):
-    if data_config.block_periodic:
+def create_dataset_from_As(As, data_config, matlab_engine=None):
+    # if data_config.block_periodic:
+    if False:
         Ss = [None] * len(As)  # relaxation matrices are only created per block when calling loss()
     else:
         Ss = relaxation_matrices(As)
@@ -91,7 +92,13 @@ def create_dataset_from_As(As, data_config):
         splittings = [solver.levels[0].splitting for solver in solvers]
         coarse_nodes_list = [np.nonzero(splitting)[0] for splitting in splittings]
 
-    return DataSet(As, Ss, coarse_nodes_list, baseline_P_list)
+    spasity_patterns_list = []
+    for A, coarse_nodes, baseline_P in zip(As, coarse_nodes_list, baseline_P_list):
+        pattern = P_square_sparsity_pattern(baseline_P, baseline_P.shape[0],
+                                                        coarse_nodes, matlab_engine)
+        spasity_patterns_list.append(pattern)
+
+    return DataSet(As, Ss, coarse_nodes_list, baseline_P_list, spasity_patterns_list)
 
 
 def loss(dataset, A_graphs_tuple, P_graphs_tuple,
@@ -352,12 +359,14 @@ def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACI
     #                                            edge_indicators=eval_config.run_config.edge_indicators
     #                                            )
     
-    eval_A_graphs_tuple = csrs_to_dgl_dataset(eval_dataset.As, matlab_engine,
-                                               coarse_nodes_list=eval_dataset.coarse_nodes_list,
-                                               baseline_P_list=eval_dataset.baseline_P_list,
-                                               node_indicators=eval_config.run_config.node_indicators,
-                                               edge_indicators=eval_config.run_config.edge_indicators
-                                               )
+    # eval_A_graphs_tuple = csrs_to_dgl_dataset(eval_dataset.As, matlab_engine,
+    #                                            coarse_nodes_list=eval_dataset.coarse_nodes_list,
+    #                                            baseline_P_list=eval_dataset.baseline_P_list,
+    #                                            node_indicators=eval_config.run_config.node_indicators,
+    #                                            edge_indicators=eval_config.run_config.edge_indicators
+    #                                            )
+    dataset = AMGDataset(eval_dataset)
+    print(dataset[0])
 
     assert 1==2, "Stop here"
 
