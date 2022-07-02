@@ -4,21 +4,22 @@ import matlab.engine
 import numpy as np
 import pyamg
 import scipy.linalg
-import tensorflow as tf
+# import tensorflow as tf
+import torch
 from pyamg.classical.interpolate import direct_interpolation
 from scipy.sparse import csr_matrix
 
 from utils import chunks, most_frequent_splitting
 
 
-def frob_norm(a, power=1):
+def frob_norm(A, power=1):
     if power == 1:
-        return tf.norm(a, axis=[-2, -1])
+        return torch.linalg.norm(torch.as_tensor(A, dtype=torch.float32), axis=[-2, -1])
     else:
-        curr_power = a
+        curr_power = torch.as_tensor(A, dtype=torch.float32)
         for i in range(power - 1):
-            curr_power = a @ curr_power
-        return tf.norm(curr_power, axis=[-2, -1]) ** (1 / power)
+            curr_power = A @ curr_power
+        return torch.linalg.norm(curr_power, axis=[-2, -1]) ** (1 / power)
 
 
 def compute_coarse_A(R, A, P):
@@ -426,3 +427,8 @@ def test_block_diagonalize_P():
     M_eigs = np.sort(np.linalg.eigvals(M))
 
     pass
+
+
+if __name__ == "__main__":
+    A = np.linspace(0, 1, 18).reshape(2,3,3)
+    print(frob_norm(A))

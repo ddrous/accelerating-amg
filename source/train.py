@@ -7,7 +7,7 @@ import fire
 import matlab.engine
 import numpy as np
 import pyamg
-import tensorflow as tf
+# import tensorflow as tf
 # import tensorflow.compat.v1 as tf
 # tf.disable_v2_behavior() 
 from pyamg.classical.interpolate import direct_interpolation
@@ -17,11 +17,11 @@ from tqdm import tqdm
 import configs
 from data import generate_A
 from dataset import DataSet
-from model import csrs_to_graphs_tuple, create_model, graphs_tuple_to_sparse_matrices, to_prolongation_matrix_tensor
+# from model import csrs_to_graphs_tuple, create_model, graphs_tuple_to_sparse_matrices, to_prolongation_matrix_tensor
 from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
     two_grid_error_matrix, compute_coarse_A
 from relaxation import relaxation_matrices
-from utils import create_results_dir, write_config_file, most_frequent_splitting, chunks
+# from utils import create_results_dir, write_config_file, most_frequent_splitting, chunks
 
 
 def create_dataset(num_As, data_config, run=0, matlab_engine=None):
@@ -409,8 +409,33 @@ def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACI
 
 
 if __name__ == '__main__':
-    tf_config = tf.compat.v1.ConfigProto()
-    tf_config.gpu_options.allow_growth = True
-    tf.compat.v1.enable_eager_execution(config=tf_config)
+    # tf_config = tf.compat.v1.ConfigProto()
+    # tf_config.gpu_options.allow_growth = True
+    # tf.compat.v1.enable_eager_execution(config=tf_config)
 
-    fire.Fire(train)
+    # fire.Fire(train)
+
+    np.set_printoptions(precision=2)
+
+    matlab_engine = matlab.engine.start_matlab()
+    # matlab_engine = None
+    config = configs.GRAPH_LAPLACIAN_TRAIN_CREATE_DATA
+
+    data_config = config.data_config
+    num_As = 2
+
+    As = [generate_A(data_config.num_unknowns,
+                        data_config.dist,
+                        data_config.block_periodic,
+                        data_config.root_num_blocks,
+                        add_diag=data_config.add_diag,
+                        matlab_engine=matlab_engine) for _ in range(num_As)]
+
+    view=10
+    print()
+    print(As[0][0].sum())
+
+    dataset = create_dataset(num_As, data_config, run=0, matlab_engine=matlab_engine)
+    toprint = dataset.As[0].todense()[:view, :view].view()
+    print(toprint)
+

@@ -1,5 +1,6 @@
 import scipy
-import tensorflow as tf
+# import tensorflow as tf
+import torch
 
 import utils
 
@@ -15,9 +16,9 @@ def relaxation_matrices(As, tensor=False):
     res = []
     if tensor:
         for i in range(num_As):
-            res.append(tf.linalg.triangular_solve(As[i].toarray(),
-                                                  -Bs[i],
-                                                  lower=True))
+            res.append(torch.triangular_solve(torch.as_tensor(-Bs[i]),               ## Remember to chech the input tensors later on--> Pytorch
+                                                  torch.as_tensor(As[i]),
+                                                  lower=False))
     else:
         for i in range(num_As):
             res.append(scipy.linalg.solve_triangular(a=As[i].toarray(),

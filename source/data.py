@@ -11,33 +11,33 @@ import pyamg
 import scipy
 from scipy.sparse import csr_matrix, lil_matrix
 from scipy.sparse.csgraph import laplacian as csgraph_laplacian
-from scipy.spatial.qhull import Delaunay
+from scipy.spatial import Delaunay
 from sklearn import datasets
 from sklearn.neighbors import kneighbors_graph
 from sklearn.preprocessing import StandardScaler
 
 
 def generate_A(size, dist, block_periodic, root_num_blocks, add_diag=False, matlab_engine=None):
-    if dist is 'lognormal_laplacian':
+    if dist == 'lognormal_laplacian':
         A = generate_A_delaunay_dirichlet_lognormal(size, matlab_engine=matlab_engine)
-    elif dist is 'lognormal_laplacian_periodic':
+    elif dist == 'lognormal_laplacian_periodic':
         if block_periodic:
             A, _ = generate_A_delaunay_block_periodic_lognormal(size, root_num_blocks, matlab_engine)
         else:
             A = generate_A_delaunay_periodic_lognormal(size, uniform=False)
-    elif dist is 'lognormal_complex_fem':
+    elif dist == 'lognormal_complex_fem':
         A = A_dirichlet_finite_element_quality(size, matlab_engine, hole=True)
-    elif dist is 'spectral_clustering':
+    elif dist == 'spectral_clustering':
         A = generate_A_spec_cluster(size, add_diag=add_diag)
-    elif dist is 'poisson':
+    elif dist == 'poisson':
         grid_size = int(np.sqrt(size))
         A = pyamg.gallery.poisson((grid_size, grid_size), type='FE')
-    elif dist is 'aniso':
+    elif dist == 'aniso':
         grid_size = int(np.sqrt(size))
         # stencil = pyamg.gallery.diffusion_stencil_2d(epsilon=0.01, type='FE')
         stencil = pyamg.gallery.diffusion_stencil_2d(epsilon=0.01, theta=np.pi / 3, type='FE')
         A = pyamg.gallery.stencil_grid(stencil, (grid_size, grid_size), format='csr')
-    elif dist is 'example':
+    elif dist == 'example':
         A = pyamg.gallery.load_example(size)['A']
     return A
 
@@ -210,9 +210,6 @@ def generate_A_spec_cluster(num_unknowns, add_diag=False, num_clusters=2, unit_s
 def generate_A_delaunay_block_periodic_lognormal(num_unknowns_per_block, root_num_blocks, matlab_engine):
     """Poisson equation on triangular mesh, with lognormal coefficients, and block periodic boundary conditions"""
     # points are correct only for 3x3 number of blocks
-    print("Types")
-    print(type(num_unknowns_per_block), type(root_num_blocks))
-    print(matlab_engine.which("block_periodic_delaunay.m"))
     A_matlab, points_matlab = matlab_engine.block_periodic_delaunay(num_unknowns_per_block, root_num_blocks, nargout=2)
     A_numpy = np.array(A_matlab._data).reshape(A_matlab.size, order='F')
     points_numpy = np.array(points_matlab._data).reshape(points_matlab.size, order='F')
@@ -467,10 +464,11 @@ if __name__ == "__main__":
 
     import configs
     import matlab.engine
+    np.set_printoptions(precision=2)
 
     matlab_engine = matlab.engine.start_matlab()
+    # matlab_engine = None
     config = configs.GRAPH_LAPLACIAN_TRAIN_CREATE_DATA
-    print(config)
 
     data_config = config.data_config
     num_As = 2
@@ -482,4 +480,6 @@ if __name__ == "__main__":
                         add_diag=data_config.add_diag,
                         matlab_engine=matlab_engine) for _ in range(num_As)]
 
-    print(As)
+    view=10
+    print(As[0].todense()[:view, :view].view())
+    print(As[0][0].sum())
