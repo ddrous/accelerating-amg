@@ -7,6 +7,7 @@ import fire
 import matlab.engine
 import numpy as np
 import pyamg
+import torch
 # import tensorflow as tf
 # import tensorflow.compat.v1 as tf
 # tf.disable_v2_behavior() 
@@ -21,12 +22,12 @@ from dataset import DataSet
 from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
     two_grid_error_matrix, compute_coarse_A
 from relaxation import relaxation_matrices
-# from utils import create_results_dir, write_config_file, most_frequent_splitting, chunks
+from utils import create_results_dir, write_config_file, most_frequent_splitting, chunks
 
 
 def create_dataset(num_As, data_config, run=0, matlab_engine=None):
     if data_config.load_data:
-        As_filename = f"data_dir/periodic_delaunay_num_As_{num_As}_num_points_{data_config.num_unknowns}" \
+        As_filename = f"../data/periodic_delaunay_num_As_{num_As}_num_points_{data_config.num_unknowns}" \
             f"_rnb_{data_config.root_num_blocks}_epoch_{run}.npy"
         if not os.path.isfile(As_filename):
             raise RuntimeError(f"file {As_filename} not found")
@@ -46,7 +47,7 @@ def create_dataset(num_As, data_config, run=0, matlab_engine=None):
                          matlab_engine=matlab_engine) for _ in range(num_As)]
 
     if data_config.save_data:
-        As_filename = f"data_dir/periodic_delaunay_num_As_{num_As}_num_points_{data_config.num_unknowns}" \
+        As_filename = f"../data/periodic_delaunay_num_As_{num_As}_num_points_{data_config.num_unknowns}" \
             f"_rnb_{data_config.root_num_blocks}_epoch_{run}.npy"
         np.save(As_filename, As)
     return create_dataset_from_As(As, data_config)
@@ -67,7 +68,6 @@ def create_dataset_from_As(As, data_config):
         splittings = []
         baseline_P_list = []
         for i in range(len(As)):
-            # visualize_cf_splitting(As[i], Vs[i], orig_splittings[i])
 
             orig_splitting = orig_solvers[i].levels[0].splitting
             block_splittings = list(chunks(orig_splitting, data_config.num_unknowns))
@@ -78,9 +78,10 @@ def create_dataset_from_As(As, data_config):
             # we recompute the Ruge-Stuben prolongation matrix with the modified splitting, and the original strength
             # matrix. We assume the strength matrix is block-circulant (because A is block-circulant)
             A = As[i]
-            C = orig_solvers[i].levels[0].C
+            C = orig_solvers[i].levels[0].C     ## classical_strength_of_connection between nodes
+            # print("Coarse nodes?", C)
             P = direct_interpolation(A, C, repeated_splitting)
-            baseline_P_list.append(tf.convert_to_tensor(P.toarray(), dtype=tf.float64))
+            baseline_P_list.append(torch.as_tensor(P.toarray(), dtype=torch.float64))
 
         coarse_nodes_list = [np.nonzero(splitting)[0] for splitting in splittings]
 
@@ -88,9 +89,10 @@ def create_dataset_from_As(As, data_config):
         solvers = [pyamg.ruge_stuben_solver(A, max_levels=2, keep=True, CF=data_config.splitting)
                    for A in As]
         baseline_P_list = [solver.levels[0].P for solver in solvers]
-        baseline_P_list = [tf.convert_to_tensor(P.toarray(), dtype=tf.float64) for P in baseline_P_list]
+        baseline_P_list = [torch.as_tensor(P.toarray(), dtype=torch.float64) for P in baseline_P_list]
         splittings = [solver.levels[0].splitting for solver in solvers]
         coarse_nodes_list = [np.nonzero(splitting)[0] for splitting in splittings]
+
     return DataSet(As, Ss, coarse_nodes_list, baseline_P_list)
 
 
@@ -433,9 +435,12 @@ if __name__ == '__main__':
 
     view=10
     print()
-    print(As[0][0].sum())
+    # print(As[0].toarray()[:view,:view])
+    B= np.load('../data/periodic_delaunay_num_As_2_num_points_4_rnb_4_epoch_0.npy', allow_pickle=True)
+    # print(B[1].toarray()[:view,:view])
 
     dataset = create_dataset(num_As, data_config, run=0, matlab_engine=matlab_engine)
-    toprint = dataset.As[0].todense()[:view, :view].view()
+    # toprint = dataset.As[0].todense()[:view, :view].view()
+    toprint = dataset.coarse_nodes_list[0]
     print(toprint)
 

@@ -22,6 +22,7 @@ venv.bak/
 data/*
 models/*
 !models/README.md
+!data/README.md
 
 # From Luz et al
 results/*
