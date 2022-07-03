@@ -8,6 +8,7 @@ import matlab.engine
 import numpy as np
 import pyamg
 import torch
+from torch.utils.tensorboard import SummaryWriter
 from pyamg.classical.interpolate import direct_interpolation
 from scipy.sparse import csr_matrix
 from tqdm import tqdm
@@ -15,7 +16,7 @@ from tqdm import tqdm
 import configs
 from data import generate_A
 from dataset import DataSet
-from model import csrs_to_dgl_dataset, create_model, graphs_tuple_to_sparse_matrices, to_prolongation_matrix_tensor, AMGDataset
+from model import AMGModel, create_model, graphs_tuple_to_sparse_matrices, to_prolongation_matrix_tensor, AMGDataset
 from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
     two_grid_error_matrix, compute_coarse_A, P_square_sparsity_pattern
 from relaxation import relaxation_matrices
@@ -354,24 +355,22 @@ def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACI
 
     eval_dataset_dgl = AMGDataset(eval_dataset, config.data_config)
 
-
     if config.train_config.load_model:
         raise NotImplementedError()
     else:
-        model = create_model(config.model_config)
-        assert 1==2, "Stop here"
-
-        global_step = tf.compat.v1.train.get_or_create_global_step()
-        optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=config.train_config.learning_rate)
-
+        model = AMGModel(config.model_config)
+        optimizer = torch.optim.Adam(model.parameters(), lr=config.train_config.learning_rate)
+    
     run_name = ''.join(random.choices(string.digits, k=5))  # to make the run_name string unique
     create_results_dir(run_name)
     write_config_file(run_name, config, seed)
 
     checkpoint_prefix = os.path.join(config.train_config.checkpoint_dir + '/' + run_name, 'ckpt')
     log_dir = config.train_config.tensorboard_dir + '/' + run_name
-    writer = tf.summary.create_file_writer(log_dir)
-    writer.set_as_default()
+    writer = SummaryWriter(log_dir=log_dir)
+    # writer.add_scalar("Loss/train", loss, epoch)          ## Remember to use this during train
+
+    assert 1==2, "Stop here"
 
     for run in range(config.train_config.num_runs):
         # we create the data before the training loop starts for efficiency,

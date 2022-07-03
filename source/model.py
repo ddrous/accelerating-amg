@@ -1,5 +1,8 @@
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 import dgl
+import dgl.nn as dglnn
 from dgl.data import DGLDataset
 from dgl.data.utils import save_graphs, load_graphs
 import matlab
@@ -62,23 +65,6 @@ def create_model(model_config):
                                                latent_size=model_config.latent_size,
                                                num_layers=model_config.mlp_layers,
                                                concat_encoder=model_config.concat_encoder)
-
-
-def csrs_to_dgl_dataset(csrs, matlab_engine, node_feature_size=128, coarse_nodes_list=None, baseline_P_list=None,
-                         node_indicators=True, edge_indicators=True):
-
-     for csr, coarse_nodes, baseline_P in zip(csrs, coarse_nodes_list, baseline_P_list):
-
-        ## Edge features
-        baseline_P_rows, baseline_P_cols = P_square_sparsity_pattern(baseline_P, baseline_P.shape[0],
-                                                                            coarse_nodes, matlab_engine)
-        
-
-        ## Node features
-        ## Only coarse nodes
-
-        print("Baseline P:", baseline_P.shape)
-        print("Baseline P rows:", len(baseline_P_rows))
 
 
 class AMGDataset(DGLDataset):
@@ -151,7 +137,74 @@ class AMGDataset(DGLDataset):
     def __len__(self):
         return self.num_graphs
 
+class AMGModel(nn.Module):
+    def __init__(self, model_config):
+        super().__init__()
+        h_feats = model_config.latent_size
 
+        ## Encode nodes
+        self.W1, self.W2 = self.create_MLP(2, h_feats, h_feats)
+
+        ## Encode edges
+        self.W5, self.W6 = self.create_MLP(3, h_feats, h_feats)
+
+        ## Process
+        self.conv1 = dglnn.SAGEConv(
+                    in_feats=h_feats, out_feats=h_feats, aggregator_type='mean')
+        self.conv2 = dglnn.SAGEConv(
+                    in_feats=2*h_feats, out_feats=h_feats, aggregator_type='mean')
+        self.conv3 = dglnn.SAGEConv(
+                    in_feats=2*h_feats, out_feats=h_feats, aggregator_type='mean')
+
+        ## Decode edges
+        self.W9, self.W10 = self.create_MLP(2*h_feats, h_feats, 1)    ## Concat source and dest before doing this
+
+    def create_MLP(self, in_feats, hidden_feats, out_feats):
+        W1 = nn.Linear(in_feats, hidden_feats)
+        W2 = nn.Linear(hidden_feats, out_feats)
+        return W1, W2
+
+    def encode_nodes(self, nodes):
+        h = torch.cat([nodes['C'], nodes['F']], 1)
+        return {'node_encs': self.W2(F.relu(self.W1(h)))}
+
+    def encode_edges(self, edges):
+        h = torch.cat([edges.data['A'], edges.data['SP1'], edges.data['SP0']], 1)
+        return {'edge_encs': self.W6(F.relu(self.W5(h)))}
+
+    def decode_edges(self, edges):
+        h = torch.cat([edges.src['h'], edges.dst['h']], 1)          ##Key here
+        return {'new_P': self.W10(F.relu(self.W9(h))).squeeze(1)}
+
+    def forward(self, g, h):
+        with g.local_scope():
+
+            ## Encode nodes
+            g.apply_nodes(self.encode_nodes)
+            
+            ## Encode edges
+            g.apply_edges(self.encode_edges)
+
+            ## Message passing
+            n_encs = g.ndata['node_encs']
+            e_encs = g.edata['edge_encs']
+            # e_encs = g.edata['A']
+
+            h = self.conv1(g, n_encs, edge_weight=e_encs)
+            h = F.relu(h)
+
+            h = torch.cat([h, n_encs], 1)
+            h = self.conv2(g, h, edge_weight=e_encs)
+            h = F.relu(h)
+            
+            h = torch.cat([h, n_encs], 1)
+            h = self.conv2(g, h, edge_weight=e_encs)
+
+            ## Decode edges
+            g.ndata['h'] = h
+            g.apply_edges(self.decode_edges)
+
+            return g.edata['new_P']
 
 def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_nodes_list=None, baseline_P_list=None,
                          node_indicators=True, edge_indicators=True):
