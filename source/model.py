@@ -85,9 +85,12 @@ class AMGDataset(DGLDataset):
     """
     A class to convert an inhouse dataset (set of matrices) into a DGLdataset
     """
-    def __init__(self, data, save_path):
+    def __init__(self, data, data_config):
         self.data = data
-        super(AMGDataset, self).__init__(name='AMG', save_path=save_path)
+        self.dtype = data_config.dtype
+        save_path = f"../data/periodic_delaunay_num_As_{len(data.As)}_num_points_{data_config.num_unknowns}" \
+            f"_rnb_{data_config.root_num_blocks}"
+        super(AMGDataset, self).__init__(name='AMG', save_dir=save_path)
 
     def process(self):
         As = self.data.As
@@ -98,6 +101,9 @@ class AMGDataset(DGLDataset):
 
         self.num_graphs = len(As)
         self.graphs = []
+        dtype = torch.float64
+        if self.dtype=='single':
+            dtype = torch.float32
 
         for i in range(self.num_graphs):
             ## Add edges features
@@ -115,17 +121,18 @@ class AMGDataset(DGLDataset):
             non_baseline_edges = (~same_indices).astype(np.float64)
 
             g = dgl.graph((A_coo.row, A_coo.col))
-            g.edata['A'] = A_coo.data
-            g.edata['SP1'] = baseline_edges
-            g.edata['SP0'] = non_baseline_edges
+
+            g.edata['A'] = torch.as_tensor(A_coo.data, dtype=dtype)
+            g.edata['SP1'] = torch.as_tensor(baseline_edges, dtype=dtype)
+            g.edata['SP0'] = torch.as_tensor(non_baseline_edges, dtype=dtype)
 
             ## Add node features
             coarse_indices = np.in1d(range(As[i].shape[0]), coarse_nodes_list[i], assume_unique=True)
             coarse_node_encodings = coarse_indices.astype(np.float64)
             fine_node_encodings = (~coarse_indices).astype(np.float64)
 
-            g.ndata['C'] = coarse_node_encodings
-            g.ndata['F'] = fine_node_encodings
+            g.ndata['C'] = torch.as_tensor(coarse_node_encodings, dtype=dtype)
+            g.ndata['F'] = torch.as_tensor(fine_node_encodings, dtype=dtype)
 
             self.graphs.append(g)
 

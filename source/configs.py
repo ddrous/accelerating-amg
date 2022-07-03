@@ -2,7 +2,7 @@ class DataConfig:
     def __init__(self, dist='lognormal_laplacian_periodic', block_periodic=True,
                 #  num_unknowns=8 ** 2, root_num_blocks=4, splitting='CLJP', add_diag=False,
                  num_unknowns=2 ** 2, root_num_blocks=4, splitting='CLJP', add_diag=False,
-                 load_data=True, save_data=False):
+                 load_data=True, save_data=False, dtype='single'):
         self.dist = dist  # see function 'generate_A()' for possible distributions
         self.block_periodic = block_periodic
         self.num_unknowns = num_unknowns
@@ -11,6 +11,7 @@ class DataConfig:
         self.add_diag = add_diag
         self.load_data = load_data
         self.save_data = save_data
+        self.dtype = dtype
 
 
 class ModelConfig:

@@ -352,28 +352,15 @@ def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACI
     # eval_dataset = create_dataset(1, eval_config.data_config)
     eval_dataset = create_dataset(2, config.data_config, run=0, matlab_engine=matlab_engine)
 
-    # eval_A_graphs_tuple = csrs_to_graphs_tuple(eval_dataset.As, matlab_engine,
-    #                                            coarse_nodes_list=eval_dataset.coarse_nodes_list,
-    #                                            baseline_P_list=eval_dataset.baseline_P_list,
-    #                                            node_indicators=eval_config.run_config.node_indicators,
-    #                                            edge_indicators=eval_config.run_config.edge_indicators
-    #                                            )
-    
-    # eval_A_graphs_tuple = csrs_to_dgl_dataset(eval_dataset.As, matlab_engine,
-    #                                            coarse_nodes_list=eval_dataset.coarse_nodes_list,
-    #                                            baseline_P_list=eval_dataset.baseline_P_list,
-    #                                            node_indicators=eval_config.run_config.node_indicators,
-    #                                            edge_indicators=eval_config.run_config.edge_indicators
-    #                                            )
-    dataset = AMGDataset(eval_dataset)
-    print(dataset[0])
+    eval_dataset_dgl = AMGDataset(eval_dataset, config.data_config)
 
-    assert 1==2, "Stop here"
 
     if config.train_config.load_model:
         raise NotImplementedError()
     else:
         model = create_model(config.model_config)
+        assert 1==2, "Stop here"
+
         global_step = tf.compat.v1.train.get_or_create_global_step()
         optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=config.train_config.learning_rate)
 
