@@ -6,9 +6,12 @@ import string
 import fire
 import matlab.engine
 import numpy as np
-import pyamg
 import torch
 from torch.utils.tensorboard import SummaryWriter
+
+import pyamg
+from dgl.dataloading import GraphDataLoader
+from torch.utils.data.sampler import SubsetRandomSampler
 from pyamg.classical.interpolate import direct_interpolation
 from scipy.sparse import csr_matrix
 from tqdm import tqdm
@@ -168,11 +171,14 @@ def save_model_and_optimizer(checkpoint_prefix, model, optimizer, global_step):
 
 
 def train_run(run_dataset, run, batch_size, config,
-              model, optimizer, global_step, checkpoint_prefix,
+              model, optimizer, checkpoint_prefix,
               eval_dataset, eval_A_graphs_tuple, eval_config, matlab_engine):
     num_As = len(run_dataset.As)
     if num_As % batch_size != 0:
         raise RuntimeError("batch size must divide training data size")
+   
+    device = torch.device("cuda:0")
+    # model = model.to(device)              ## <<------------------ Remember to mode model to GPU too
 
     run_dataset = run_dataset.shuffle()
     num_batches = num_As // batch_size
@@ -182,34 +188,30 @@ def train_run(run_dataset, run, batch_size, config,
         end_index = start_index + batch_size
         batch_dataset = run_dataset[start_index:end_index]
 
-        batch_A_graphs_tuple = csrs_to_graphs_tuple(batch_dataset.As, matlab_engine,
-                                                    coarse_nodes_list=batch_dataset.coarse_nodes_list,
-                                                    baseline_P_list=batch_dataset.baseline_P_list,
-                                                    node_indicators=config.run_config.node_indicators,
-                                                    edge_indicators=config.run_config.edge_indicators)
+        batch_A_dgl_dataset = AMGDataset(batch_dataset, config.data_config)
+        batch_A_dgl_dataset_gpu = batch_A_dgl_dataset.to(device)
 
-        with tf.GradientTape() as tape:
-            with tf.device('/gpu:0'):
-                batch_P_graphs_tuple = model(batch_A_graphs_tuple)
-            frob_loss, M = loss(batch_dataset, batch_A_graphs_tuple, batch_P_graphs_tuple,
-                                config.run_config, config.train_config, config.data_config)
+        batch_P_dgl_dataset = model(batch_A_dgl_dataset_gpu)
+        frob_loss, M = loss(batch_dataset.to(device), batch_A_dgl_dataset_gpu, batch_P_dgl_dataset,
+                            config.run_config, config.train_config, config.data_config)
 
         print(f"frob loss: {frob_loss.numpy()}")
         save_every = max(1000 // batch_size, 1)
         if batch % save_every == 0:
-            checkpoint = save_model_and_optimizer(checkpoint_prefix, model, optimizer, global_step)
+            checkpoint = save_model_and_optimizer(checkpoint_prefix, model, optimizer, int(batch))      ## <------ Find a better way to get the global_step (the number count for the batches)
 
-        # we don't call .get_variables() because the model is Sequential/custom,
-        # see docs for Sequential.get_variables()
-        variables = model.get_all_variables()
-        grads = tape.gradient(frob_loss, variables)
+        optimizer.zero_grad()
+        frob_loss.backward()
+        optimizer.step()
 
-        global_step.assign_add(batch_size - 1)  # apply_gradients increments global_step by 1
-        optimizer.apply_gradients(zip(grads, variables),
-                                  global_step=global_step)
+        variables = model.parameters()
+        grads = []
+        for var in variables:
+            grads.append(var.grad)
 
         record_tb(M, run, num_As, batch, batch_size, frob_loss, grads, loop, model,
                   variables, eval_dataset, eval_A_graphs_tuple, eval_config)
+
     return checkpoint
 
 
@@ -379,9 +381,9 @@ def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACI
                                      run=run, matlab_engine=matlab_engine)
 
         checkpoint = train_run(run_dataset, run, batch_size, config,
-                               model, optimizer, global_step,
+                               model, optimizer,
                                checkpoint_prefix,
-                               eval_dataset, eval_A_graphs_tuple, eval_config,
+                               eval_dataset, eval_dataset_dgl, eval_config,
                                matlab_engine)
         checkpoint.save(file_prefix=checkpoint_prefix)
 
@@ -408,9 +410,9 @@ def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACI
             combined_run_dataset = combined_run_dataset.shuffle()
 
             checkpoint = train_run(combined_run_dataset, run, batch_size, config,
-                                   model, optimizer, global_step,
+                                   model, optimizer,
                                    checkpoint_prefix,
-                                   eval_dataset, eval_A_graphs_tuple, eval_config,
+                                   eval_dataset, eval_dataset_dgl, eval_config,
                                    matlab_engine)
             checkpoint.save(file_prefix=checkpoint_prefix)
 
