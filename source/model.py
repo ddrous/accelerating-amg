@@ -1,10 +1,9 @@
-# import graph_nets as gn
+import torch
 import dgl
 from dgl.data import DGLDataset
+from dgl.data.utils import save_graphs, load_graphs
 import matlab
 import numpy as np
-# import tensorflow as tf
-import torch
 from scipy.sparse import csr_matrix
 
 from data import As_poisson_grid
@@ -83,26 +82,64 @@ def csrs_to_dgl_dataset(csrs, matlab_engine, node_feature_size=128, coarse_nodes
 
 
 class AMGDataset(DGLDataset):
-    def __init__(self, data):
+    """
+    A class to convert an inhouse dataset (set of matrices) into a DGLdataset
+    """
+    def __init__(self, data, save_path):
         self.data = data
-        super(AMGDataset, self).__init__(name='amg')
+        super(AMGDataset, self).__init__(name='AMG', save_path=save_path)
 
     def process(self):
         As = self.data.As
-        Ss = self.data.Ss
+        # Ss = self.data.Ss
         coarse_nodes_list = self.data.coarse_nodes_list
-        baseline_Ps = self.data.baseline_P_list
+        # baseline_Ps = self.data.baseline_P_list
         sparsity_patterns = self.data.sparsity_patterns
 
         self.num_graphs = len(As)
         self.graphs = []
+
         for i in range(self.num_graphs):
+            ## Add edges features
             g = dgl.from_scipy(As[i], eweight_name='A')
+            rows, cols = sparsity_patterns[i]
+            A_coo = As[i].tocoo()
+
+            # construct numpy structured arrays, where each element is a tuple (row,col), so that we can later use
+            # the numpy set function in1d()
+            baseline_P_indices = np.core.records.fromarrays([rows, cols], dtype='i,i')
+            coo_indices = np.core.records.fromarrays([A_coo.row, A_coo.col], dtype='i,i')
+
+            same_indices = np.in1d(coo_indices, baseline_P_indices, assume_unique=True)
+            baseline_edges = same_indices.astype(np.float64)
+            non_baseline_edges = (~same_indices).astype(np.float64)
+
+            g = dgl.graph((A_coo.row, A_coo.col))
+            g.edata['A'] = A_coo.data
+            g.edata['SP1'] = baseline_edges
+            g.edata['SP0'] = non_baseline_edges
+
+            ## Add node features
+            coarse_indices = np.in1d(range(As[i].shape[0]), coarse_nodes_list[i], assume_unique=True)
+            coarse_node_encodings = coarse_indices.astype(np.float64)
+            fine_node_encodings = (~coarse_indices).astype(np.float64)
+
+            g.ndata['C'] = coarse_node_encodings
+            g.ndata['F'] = fine_node_encodings
+
             self.graphs.append(g)
 
+        ## Delete data used for creation
+        self.__dict__.pop('data', None)
 
     def __getitem__(self, i):
         return self.graphs[i]
+
+    def save(self):
+        save_graphs(self.save_path, self.graphs)
+
+    def load(self):
+        self.graphs, _ = load_graphs(self.save_path)
 
     def __len__(self):
         return self.num_graphs

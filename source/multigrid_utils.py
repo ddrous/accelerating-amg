@@ -27,10 +27,10 @@ def P_square_sparsity_pattern(P, size, coarse_nodes, matlab_engine):
     Computes the sparsity pattern of a prolongation matrix P 
     """
     P_coo = P.tocoo()
-    P_rows = matlab.double((P_coo.row + 1).astype(np.float64))
-    P_cols = matlab.double((P_coo.col + 1).astype(np.float64))
+    P_rows = matlab.double((P_coo.row + 1).tolist())
+    P_cols = matlab.double((P_coo.col + 1).tolist())
     P_values = matlab.double(P_coo.data)
-    coarse_nodes = matlab.double((coarse_nodes + 1).astype(np.float64))
+    coarse_nodes = matlab.double((coarse_nodes + 1).tolist())
     rows, cols = matlab_engine.square_P(P_rows, P_cols, P_values, size, coarse_nodes, nargout=2)
     rows = np.array(rows._data).reshape(rows.size, order='F') - 1
     cols = np.array(cols._data).reshape(cols.size, order='F') - 1
