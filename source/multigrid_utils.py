@@ -101,7 +101,7 @@ def extract_diag_blocks(block_diag_As, block_size, root_num_blocks, single_matri
 
 
 def block_diagonalize_A_fast(As, root_num_blocks, tensor=False):
-    """Returns root_num_blocks**2 matrices that represent the block diagonalization of A"""
+    """Returns root_num_blocks**2 matrices that represent the block diagonalization of As"""
     if tensor:
         total_size = As.shape[1].value
     else:
@@ -109,13 +109,13 @@ def block_diagonalize_A_fast(As, root_num_blocks, tensor=False):
     block_size = total_size // root_num_blocks
 
     double_W, double_W_conj_t = create_double_W(block_size, root_num_blocks, tensor)
-    block_diag_A = block_diag_multiply(double_W_conj_t, As, double_W)
+    block_diag_As = block_diag_multiply(double_W_conj_t, As, double_W)
 
     small_block_size = block_size // root_num_blocks
-    blocks = extract_diag_blocks(block_diag_A, small_block_size, root_num_blocks)
+    blocks = extract_diag_blocks(block_diag_As, small_block_size, root_num_blocks)
 
     if tensor:
-        return tf.stack(blocks, axis=1)
+        return torch.stack(blocks, axis=1)
     else:
         return [csr_matrix(block) for block_list in blocks for block in block_list]
 
@@ -136,7 +136,7 @@ def block_diagonalize_A_single(A, root_num_blocks, tensor=False):
     blocks = blocks[1:]  # ignore zero mode block
 
     if tensor:
-        return tf.stack(blocks, axis=0)
+        return torch.stack(blocks, axis=0)
     else:
         return [csr_matrix(block) for block_list in blocks for block in block_list]
 
@@ -253,7 +253,7 @@ def create_W_matrix(block_size, root_num_blocks, tensor=False):
     W_conj_t = W.conj().T
 
     if tensor:
-        W, W_conj_t = tf.convert_to_tensor(W), tf.convert_to_tensor(W_conj_t)
+        W, W_conj_t = torch.as_tensor(W), torch.as_tensor(W_conj_t)
     return W, W_conj_t
 
 
@@ -266,7 +266,7 @@ def create_double_W(block_size, root_num_blocks, tensor=False):
     double_W_conj_t = double_W.conj().T
 
     if tensor:
-        double_W, double_W_conj_t = tf.convert_to_tensor(double_W), tf.convert_to_tensor(double_W_conj_t)
+        double_W, double_W_conj_t = torch.as_tensor(double_W), torch.as_tensor(double_W_conj_t)
     return double_W, double_W_conj_t
 
 

@@ -112,12 +112,12 @@ def loss(dataset, A_graphs_dgl, P_graphs_dgl,
     Ps_square, nodes_list = dgl_graph_to_sparse_matrices(P_graphs_dgl, val_feature='P', return_nodes=True)
 
     if train_config.fourier:
-        As = [torch.from_numpy(A.todense()).type(torch.complex64) for A in As]
+        As = [torch.as_tensor(A.todense(), dtype=torch.complex64) for A in As]
         block_As = [block_diagonalize_A_single(A, data_config.root_num_blocks, tensor=False) for A in As]
-        block_Ss = relaxation_matrices([csr_matrix(A) for block_A in block_As for A in block_A])
+        block_Ss = relaxation_matrices([csr_matrix(block) for block_A in block_As for block in block_A])
 
-    batch_size = len(dataset.coarse_nodes_list)
-    total_norm = tf.Variable(0.0, dtype=tf.float64)
+    batch_size = len(dataset.coarse_nodes_list)         ##<<<----- WHY ?????
+    total_norm = torch.tensor(0.0, requires_grad=True)
     for i in range(batch_size):
         if train_config.fourier:
             num_blocks = data_config.root_num_blocks ** 2 - 1
