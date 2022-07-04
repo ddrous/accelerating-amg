@@ -19,7 +19,7 @@ from tqdm import tqdm
 import configs
 from data import generate_A
 from dataset import DataSet
-from model import AMGModel, create_model, graphs_tuple_to_sparse_matrices, to_prolongation_matrix_tensor, AMGDataset
+from model import AMGModel, create_model, dgl_graph_to_sparse_matrices, to_prolongation_matrix_tensor, AMGDataset
 from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
     two_grid_error_matrix, compute_coarse_A, P_square_sparsity_pattern
 from relaxation import relaxation_matrices
@@ -105,13 +105,14 @@ def create_dataset_from_As(As, data_config, matlab_engine=None):
     return DataSet(As, Ss, coarse_nodes_list, baseline_P_list, spasity_patterns_list)
 
 
-def loss(dataset, A_graphs_tuple, P_graphs_tuple,
-         run_config, train_config, data_config):
-    As = graphs_tuple_to_sparse_matrices(A_graphs_tuple)
-    Ps_square, nodes_list = graphs_tuple_to_sparse_matrices(P_graphs_tuple, True)
+def loss(dataset, A_graphs_dgl, P_graphs_dgl,
+                                    run_config, train_config, data_config):
+    
+    As = dataset.As
+    Ps_square, nodes_list = dgl_graph_to_sparse_matrices(P_graphs_dgl, val_feature='P', return_nodes=True)
 
     if train_config.fourier:
-        As = [tf.cast(tf.sparse.to_dense(A), tf.complex128) for A in As]
+        As = [torch.from_numpy(A.todense()).type(torch.complex64) for A in As]
         block_As = [block_diagonalize_A_single(A, data_config.root_num_blocks, tensor=False) for A in As]
         block_Ss = relaxation_matrices([csr_matrix(A) for block_A in block_As for A in block_A])
 

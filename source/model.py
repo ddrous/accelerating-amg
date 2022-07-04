@@ -204,7 +204,16 @@ class AMGModel(nn.Module):
             g.ndata['h'] = h
             g.apply_edges(self.decode_edges)
 
-            return g.edata['new_P']
+            new_P = g.edata['new_P']
+            # return g.edata['new_P']
+            # return g
+
+        ### <<------- Trick to have local scope and keep newP ---------->>
+        if 'new_P' in g.edata:
+            return g
+        else:
+            g.edata['new_P'] = new_P
+            return g
 
 def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_nodes_list=None, baseline_P_list=None,
                          node_indicators=True, edge_indicators=True):
@@ -287,25 +296,6 @@ def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_node
 
 
 
-
-def graphs_tuple_to_sparse_tensor(graphs_tuple):
-    senders = graphs_tuple.senders
-    receivers = graphs_tuple.receivers
-    indices = tf.cast(tf.stack([senders, receivers], axis=1), tf.int64)
-
-    # first element in the edge feature is the value, the other elements are metadata
-    values = tf.squeeze(graphs_tuple.edges[:, 0])
-
-    shape = tf.concat([graphs_tuple.n_node, graphs_tuple.n_node], axis=0)
-    shape = tf.cast(shape, tf.int64)
-
-    matrix = tf.sparse.SparseTensor(indices, values, shape)
-    # reordering is required because the pyAMG coarsening step does not preserve indices order
-    matrix = tf.sparse.reorder(matrix)
-
-    return matrix
-
-
 def to_prolongation_matrix_csr(matrix, coarse_nodes, baseline_P, nodes, normalize_rows=True,
                                normalize_rows_by_node=False):
     """
@@ -374,6 +364,30 @@ def to_prolongation_matrix_tensor(matrix, coarse_nodes, baseline_P, nodes,
     return matrix
 
 
+
+def dgl_graph_to_sparse_matrices(dgl_graph, val_feature='P', return_nodes=False):
+    num_graphs = len(dgl_graph)
+    graphs = [dgl_graph[i] for i in range(num_graphs)]
+
+    matrices = []
+    nodes_lists = []
+    for graph in graphs:
+        indices = torch.stack(graph.edges(), axis=0)
+        indices = graph.edata[val_feature]
+        n_nodes = graph.num_nodes()
+        matrix = torch.sparse_coo_tensor(indices, indices, (n_nodes, n_nodes))
+         # reordering is required because the pyAMG coarsening step does not preserve indices order
+        matrix = matrix.coalesce()
+        matrices.append(matrix)
+
+    if return_nodes:
+        for graph in graphs:
+            nodes_list = graph.nodes()
+            nodes_lists.append(nodes_list)
+        return matrices, nodes_lists
+    else: 
+        return matrices
+
 def graphs_tuple_to_sparse_matrices(graphs_tuple, return_nodes=False):
     num_graphs = int(graphs_tuple.n_node.shape[0])
     graphs = [gn.utils_tf.get_graph(graphs_tuple, i)
@@ -388,3 +402,19 @@ def graphs_tuple_to_sparse_matrices(graphs_tuple, return_nodes=False):
         return matrices
 
 
+def graphs_tuple_to_sparse_tensor(graphs_tuple):
+    senders = graphs_tuple.senders
+    receivers = graphs_tuple.receivers
+    indices = tf.cast(tf.stack([senders, receivers], axis=1), tf.int64)
+
+    # first element in the edge feature is the value, the other elements are metadata
+    values = tf.squeeze(graphs_tuple.edges[:, 0])
+
+    shape = tf.concat([graphs_tuple.n_node, graphs_tuple.n_node], axis=0)
+    shape = tf.cast(shape, tf.int64)
+
+    matrix = tf.sparse.SparseTensor(indices, values, shape)
+    # reordering is required because the pyAMG coarsening step does not preserve indices order
+    matrix = tf.sparse.reorder(matrix)
+
+    return matrix
