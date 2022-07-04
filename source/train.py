@@ -126,34 +126,34 @@ def loss(dataset, A_graphs_dgl, P_graphs_dgl,
             coarse_nodes = dataset.coarse_nodes_list[i]
             baseline_P = dataset.baseline_P_list[i]
             nodes = nodes_list[i]
-            P = to_prolongation_matrix_tensor(P_square, coarse_nodes, baseline_P, nodes,
+            P, full_P = to_prolongation_matrix_tensor(P_square, coarse_nodes, baseline_P, nodes,
                                               normalize_rows=run_config.normalize_rows,
                                               normalize_rows_by_node=run_config.normalize_rows_by_node)
-            block_P = block_diagonalize_P(P, data_config.root_num_blocks, coarse_nodes)
+            block_P = block_diagonalize_P(full_P, data_config.root_num_blocks, coarse_nodes)
 
-            As = tf.stack(block_As[i])
-            Ps = tf.stack(block_P)
-            Rs = tf.transpose(Ps, perm=[0, 2, 1], conjugate=True)
-            Ss = tf.convert_to_tensor(block_Ss[num_blocks * i:num_blocks * (i + 1)])
+            As = torch.stack(block_As[i])
+            Ps = torch.stack(block_P)
+            Rs = torch.conj(torch.transpose(Ps, dim0=1, dim1=2))
+            Ss = torch.as_tensor(block_Ss[num_blocks * i:num_blocks * (i + 1)])
 
             Ms = two_grid_error_matrices(As, Ps, Rs, Ss)
             M = Ms[-1]  # for logging
-            block_norms = tf.abs(frob_norm(Ms, power=1))
+            block_norms = torch.abs(frob_norm(Ms, power=1))
 
-            block_max_norm = tf.reduce_max(block_norms)
+            block_max_norm = torch.max(block_norms)
             total_norm = total_norm + block_max_norm
 
         else:
-            A = tf.sparse.to_dense(As[i])
+            A = torch.as_tensor(As[i].todense())
             P_square = Ps_square[i]
             coarse_nodes = dataset.coarse_nodes_list[i]
             baseline_P = dataset.baseline_P_list[i]
             nodes = nodes_list[i]
-            P = to_prolongation_matrix_tensor(P_square, coarse_nodes, baseline_P, nodes,
+            P, _ = to_prolongation_matrix_tensor(P_square, coarse_nodes, baseline_P, nodes,
                                               normalize_rows=run_config.normalize_rows,
                                               normalize_rows_by_node=run_config.normalize_rows_by_node)
-            R = tf.transpose(P)
-            S = tf.convert_to_tensor(dataset.Ss[i])
+            R = torch.transpose(P)
+            S = torch.as_tensor(dataset.Ss[i])
 
             M = two_grid_error_matrix(A, P, R, S)
 

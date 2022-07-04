@@ -332,36 +332,38 @@ def to_prolongation_matrix_csr(matrix, coarse_nodes, baseline_P, nodes, normaliz
 def to_prolongation_matrix_tensor(matrix, coarse_nodes, baseline_P, nodes,
                                   normalize_rows=True,
                                   normalize_rows_by_node=False):
-    dtype = tf.float64
-    matrix = tf.cast(matrix, dtype)
-    matrix = tf.sparse.to_dense(matrix)
+    dtype = torch.float64
+    matrix = matrix.to_dense().type(dtype)
 
     # prolongation from coarse point to itself should be identity. This corresponds to 1's on the diagonal
-    matrix = tf.linalg.set_diag(matrix, tf.ones(matrix.shape[0], dtype=dtype))
-
+    num_rows = matrix.shape[0]
+    new_diag = torch.ones(num_rows, dtype=dtype)
+    matrix[range(num_rows), range(num_rows)] = new_diag
+    
     # select only columns corresponding to coarse nodes
-    matrix = tf.gather(matrix, coarse_nodes, axis=1)
+    matrix = matrix[:, coarse_nodes]
 
     # set sparsity pattern (interpolatory sets) to be of baseline prolongation
-    baseline_zero_mask = tf.cast(tf.not_equal(baseline_P, tf.zeros_like(baseline_P)), dtype)
+    baseline_P = torch.as_tensor(baseline_P, dtype=dtype)
+    baseline_zero_mask = torch.as_tensor(torch.not_equal(baseline_P, torch.zeros_like(baseline_P)), dtype=dtype)
     matrix = matrix * baseline_zero_mask
 
     if normalize_rows:
         if normalize_rows_by_node:
             baseline_row_sum = nodes
         else:
-            baseline_row_sum = tf.reduce_sum(baseline_P, axis=1)
-        baseline_row_sum = tf.cast(baseline_row_sum, dtype)
+            baseline_row_sum = torch.sum(baseline_P, dim=1, dtype=dtype)
 
-        matrix_row_sum = tf.reduce_sum(matrix, axis=1)
-        matrix_row_sum = tf.cast(matrix_row_sum, dtype)
+        matrix_row_sum = torch.sum(matrix, dim=1, dtype=dtype)
 
         # there might be a few rows that are all 0's - corresponding to fine points that are not connected to any
-        # coarse point. We use "divide_no_nan" to let these rows remain 0's
-        matrix = tf.math.divide_no_nan(matrix, tf.reshape(matrix_row_sum, (-1, 1)))
+        # coarse point. We use "nan_to_num" to put these rows to 0's
+        matrix = torch.divide(matrix, torch.reshape(matrix_row_sum, (-1, 1)))
+        matrix = torch.nan_to_num(matrix, nan=0.0, posinf=0.0, neginf=0.0)
 
-        matrix = matrix * tf.reshape(baseline_row_sum, (-1, 1))
-    return matrix
+        matrix = matrix * torch.reshape(baseline_row_sum, (-1, 1))
+
+    return matrix[:, coarse_nodes], matrix
 
 
 

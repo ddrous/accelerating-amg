@@ -59,18 +59,18 @@ def compute_Cs(padded_As, Is, padded_Ps, padded_Rs, coarse_As_inv):
 def two_grid_error_matrices(padded_As, padded_Ps, padded_Rs, padded_Ss):
     batch_size = padded_As.shape[0].value
     padded_length = padded_As.shape[1].value
-    Is = tf.eye(padded_length, batch_shape=[batch_size], dtype=padded_As.dtype)
+    Is = torch.eye(padded_length, dtype=padded_As.dtype).repeat([batch_size, 1, 1])
     coarse_As = compute_coarse_As(padded_Rs, padded_As, padded_Ps)
-    coarse_As_inv = tf.linalg.inv(coarse_As)
+    coarse_As_inv = torch.linalg.inv(coarse_As)
     Cs = compute_Cs(padded_As, Is, padded_Ps, padded_Rs, coarse_As_inv)
     Ms = padded_Ss @ Cs @ padded_Ss
     return Ms
 
 
 def two_grid_error_matrix(A, P, R, S):
-    I = tf.eye(A.shape[0].value, dtype=A.dtype)
+    I = torch.eye(A.shape[0].value, dtype=A.dtype)
     coarse_A = compute_coarse_A(R, A, P)
-    coarse_A_inv = tf.linalg.inv(coarse_A)
+    coarse_A_inv = torch.linalg.inv(coarse_A)
     C = compute_C(A, I, P, R, coarse_A_inv)
     M = S @ C @ S
     return M
@@ -199,17 +199,17 @@ def block_diagonalize_P(P, root_num_blocks, coarse_nodes):
     block_size = total_size // root_num_blocks
 
     # we build the padded P matrix column by column, I couldn't find a more efficient way
-    full_P = pad_P(P, coarse_nodes)
+    # full_P = pad_P(P, coarse_nodes)             #### <<---- NOT NEEDED------ I pass it a paded version of P which is already square
 
     double_W, double_W_conj_t = create_double_W(block_size, root_num_blocks, True)
-    block_diag_full_P = block_diag_multiply(double_W_conj_t, full_P, double_W)
+    block_diag_full_P = block_diag_multiply(double_W_conj_t, P, double_W)
 
     small_block_size = block_size // root_num_blocks
     blocks = extract_diag_blocks(block_diag_full_P, small_block_size, root_num_blocks, single_matrix=True)
     blocks = blocks[1:]  # ignore zero mode block
 
     block_coarse_nodes = coarse_nodes[:len(coarse_nodes) // root_num_blocks**2]
-    blocks = [tf.gather(block, block_coarse_nodes, axis=1) for block in blocks]
+    blocks = [block[:, block_coarse_nodes] for block in blocks]
 
     return blocks
 
