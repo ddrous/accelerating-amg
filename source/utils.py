@@ -47,3 +47,6 @@ def write_config_file(run_name, config, seed):
 def tril_indices(grid_size):
     """Cached version of np.tril_indices used for creating relaxation matrices"""
     return np.tril_indices(grid_size)
+
+def make_save_path(dist, num_As, num_unknows, rnb):
+    return f"../data/{dist}_num_As_{num_As}_num_points_{num_unknows}_rnb_{rnb}"

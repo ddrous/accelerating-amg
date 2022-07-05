@@ -37,7 +37,7 @@ def sparse_tensor_to_csr(a):
     rows = indices[:, 0]
     cols = indices[:, 1]
     data = a.values.numpy()
-    shape = (a.shape[0].value, a.shape[1].value)
+    shape = (a.shape[0], a.shape[1])
     a_coo = coo_matrix((data, (rows, cols)), shape=shape)
     return a_coo.tocsr()
 

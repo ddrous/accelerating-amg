@@ -1,4 +1,5 @@
 import copy
+from email.policy import default
 import os
 import random
 import string
@@ -23,7 +24,7 @@ from model import AMGModel, create_model, dgl_graph_to_sparse_matrices, to_prolo
 from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
     two_grid_error_matrix, compute_coarse_A, P_square_sparsity_pattern
 from relaxation import relaxation_matrices
-from utils import create_results_dir, write_config_file, most_frequent_splitting, chunks
+from utils import create_results_dir, write_config_file, most_frequent_splitting, chunks, make_save_path
 
 
 def create_dataset(num_As, data_config, run=0, matlab_engine=None):
@@ -113,7 +114,7 @@ def loss(dataset, A_graphs_dgl, P_graphs_dgl,
 
     if train_config.fourier:
         As = [torch.as_tensor(A.todense(), dtype=torch.complex64) for A in As]
-        block_As = [block_diagonalize_A_single(A, data_config.root_num_blocks, tensor=False) for A in As]
+        block_As = [block_diagonalize_A_single(A, data_config.root_num_blocks, tensor=True) for A in As]
         block_Ss = relaxation_matrices([csr_matrix(block) for block_A in block_As for block in block_A])
 
     batch_size = len(dataset.coarse_nodes_list)         ##<<<----- WHY ?????
@@ -132,9 +133,9 @@ def loss(dataset, A_graphs_dgl, P_graphs_dgl,
             block_P = block_diagonalize_P(full_P, data_config.root_num_blocks, coarse_nodes)
 
             As = torch.stack(block_As[i])
-            Ps = torch.stack(block_P)
+            Ps = torch.as_tensor(torch.stack(block_P), device=As.device, dtype=As.dtype)
             Rs = torch.conj(torch.transpose(Ps, dim0=1, dim1=2))
-            Ss = torch.as_tensor(block_Ss[num_blocks * i:num_blocks * (i + 1)])
+            Ss = torch.as_tensor(block_Ss[num_blocks * i:num_blocks * (i + 1)], device=As.device, dtype=As.dtype)
 
             Ms = two_grid_error_matrices(As, Ps, Rs, Ss)
             M = Ms[-1]  # for logging
@@ -164,22 +165,20 @@ def loss(dataset, A_graphs_dgl, P_graphs_dgl,
 
 
 def save_model_and_optimizer(checkpoint_prefix, model, optimizer, global_step):
-    variables = model.get_all_variables()
-    variables_dict = {variable.name: variable for variable in variables}
-    checkpoint = tf.train.Checkpoint(**variables_dict, optimizer=optimizer, global_step=global_step)
-    checkpoint.save(file_prefix=checkpoint_prefix)
-    return checkpoint
+    torch.save({
+            'epoch': global_step,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            }, checkpoint_prefix)
 
 
 def train_run(run_dataset, run, batch_size, config,
               model, optimizer, checkpoint_prefix,
-              eval_dataset, eval_A_graphs_tuple, eval_config, matlab_engine):
+              eval_dataset, eval_A_graphs_tuple, eval_config, 
+              matlab_engine=None, device="cpu", tb_writer=None):
     num_As = len(run_dataset.As)
     if num_As % batch_size != 0:
         raise RuntimeError("batch size must divide training data size")
-   
-    device = torch.device("cuda:0")
-    # model = model.to(device)              ## <<------------------ Remember to mode model to GPU too
 
     run_dataset = run_dataset.shuffle()
     num_batches = num_As // batch_size
@@ -189,93 +188,100 @@ def train_run(run_dataset, run, batch_size, config,
         end_index = start_index + batch_size
         batch_dataset = run_dataset[start_index:end_index]
 
-        batch_A_dgl_dataset = AMGDataset(batch_dataset, config.data_config)
-        batch_A_dgl_dataset_gpu = batch_A_dgl_dataset.to(device)
+        save_path = make_save_path(config.data_config.dist, len(batch_dataset.As), 
+                                    config.data_config.num_unknowns,
+                                    config.data_config.root_num_blocks)
+        batch_A_dgl_dataset = AMGDataset(batch_dataset, dtype=torch.float32, save_path=save_path)
+        batch_A_dgl_dataset_gpu = batch_A_dgl_dataset.to(device)        ## Move data to GPU if available
 
-        batch_P_dgl_dataset = model(batch_A_dgl_dataset_gpu)
-        frob_loss, M = loss(batch_dataset.to(device), batch_A_dgl_dataset_gpu, batch_P_dgl_dataset,
+        batch_dataloader = GraphDataLoader(batch_A_dgl_dataset_gpu, batch_size=batch_size)       ## Only 1 batch can be made
+        batch_P_dgl_dataset = model(next(iter(batch_dataloader)))
+        frob_loss, M = loss(batch_dataset, batch_A_dgl_dataset_gpu, batch_P_dgl_dataset,
                             config.run_config, config.train_config, config.data_config)
 
-        print(f"frob loss: {frob_loss.numpy()}")
+        print(f"frob loss: {frob_loss.item()}")
         save_every = max(1000 // batch_size, 1)
         if batch % save_every == 0:
-            checkpoint = save_model_and_optimizer(checkpoint_prefix, model, optimizer, int(batch))      ## <------ Find a better way to get the global_step (the number count for the batches)
+            save_model_and_optimizer(checkpoint_prefix, model, optimizer, int(batch))      ## <------ Find a better way to get the global_step (the number count for the batches)
 
         optimizer.zero_grad()
         frob_loss.backward()
         optimizer.step()
 
-        variables = model.parameters()
+        variables = list(model.parameters())
         grads = []
         for var in variables:
             grads.append(var.grad)
 
-        record_tb(M, run, num_As, batch, batch_size, frob_loss, grads, loop, model,
-                  variables, eval_dataset, eval_A_graphs_tuple, eval_config)
-
-    return checkpoint
-
-
-def record_tb_loss(frob_loss):
-    with tf.contrib.summary.record_summaries_every_n_global_steps(1):
-        tf.contrib.summary.scalar('loss', frob_loss)
+        if tb_writer is not None:
+            record_tb(M, run, num_As, batch, batch_size, frob_loss.item(), grads, loop, model,
+                  variables, eval_dataset, eval_A_graphs_tuple, eval_config, tb_writer)
 
 
-def record_tb_params(batch_size, grads, loop, variables):
-    with tf.contrib.summary.record_summaries_every_n_global_steps(1):
-        if loop.avg_time is not None:
-            tf.contrib.summary.scalar('seconds_per_batch', tf.convert_to_tensor(loop.avg_time))
-
-        for i in range(len(variables)):
-            variable = variables[i]
-            variable_name = variable.name
-            grad = grads[i]
-            if grad is not None:
-                tf.contrib.summary.scalar(variable_name + '_grad', tf.norm(grad) / batch_size)
-                tf.contrib.summary.histogram(variable_name + '_grad_histogram', grad / batch_size)
-                tf.contrib.summary.scalar(variable_name + '_grad_fraction_dead', tf.nn.zero_fraction(grad))
-                tf.contrib.summary.scalar(variable_name + '_value', tf.norm(variable))
-                tf.contrib.summary.histogram(variable_name + '_value_histogram', variable)
+def record_tb_loss(frob_loss, iter_nb, tb_writer):
+    tb_writer.add_scalar("loss", frob_loss, iter_nb)
 
 
-def record_tb_spectral_radius(M, model, eval_dataset, eval_A_graphs_tuple, eval_config):
-    with tf.contrib.summary.record_summaries_every_n_global_steps(1):
-        spectral_radius = np.abs(np.linalg.eigvals(M.numpy())).max()
-        tf.contrib.summary.scalar('spectral_radius', spectral_radius)
+def record_tb_params(batch_size, grads, loop, variables, tb_writer):
 
-        with tf.device('/gpu:0'):
-            eval_P_graphs_tuple = model(eval_A_graphs_tuple)
-        eval_loss, eval_M = loss(eval_dataset, eval_A_graphs_tuple, eval_P_graphs_tuple,
-                                 eval_config.run_config,
-                                 eval_config.train_config,
-                                 eval_config.data_config)
+    avg_time = getattr(loop, "avg_time", None)
+    if avg_time is not None:
+        tb_writer.add_scalar('seconds_per_batch', torch.as_tensor(avg_time))
 
-        eval_spectral_radius = np.abs(np.linalg.eigvals(eval_M.numpy())).max()
-        tf.contrib.summary.scalar('eval_loss', eval_loss)
-        tf.contrib.summary.scalar('eval_spectral_radius', eval_spectral_radius)
+    for i in range(len(variables)):
+        variable = variables[i]
+        variable_name = variable.name
+        grad = grads[i]
+        if grad is not None:
+            tb_writer.add_scalar(variable_name + '_grad', torch.norm(grad) / batch_size)
+            tb_writer.add_histogram(variable_name + '_grad_histogram', grad / batch_size)
+            tb_writer.add_scalar(variable_name + '_grad_fraction_dead', torch.count_nonzero(grad)/torch.numel(grad))
+            tb_writer.add_scalar(variable_name + '_value', torch.norm(variable))
+            tb_writer.add_histogram(variable_name + '_value_histogram', variable)
+
+
+def record_tb_spectral_radius(M, model, eval_dataset, eval_A_dgl, eval_config, tb_writer):
+
+    spectral_radius = np.abs(np.linalg.eigvals(M.numpy())).max()
+    tb_writer.add_scalar('spectral_radius', spectral_radius)
+
+    ###<<< ------ Send model to GPU before doing this one ------->> REVALUATE IT
+    eval_dataloader = GraphDataLoader(eval_A_dgl, batch_size=len(eval_A_dgl))
+    eval_P_dgl_dataset = model(next(iter(eval_dataloader)))
+
+    eval_loss, eval_M = loss(eval_dataset, eval_A_dgl, 
+                                eval_P_dgl_dataset,
+                                eval_config.run_config,
+                                eval_config.train_config,
+                                eval_config.data_config)
+
+    eval_spectral_radius = np.abs(np.linalg.eigvals(eval_M.numpy())).max()
+    tb_writer.add_scalar('eval_loss', eval_loss)
+    tb_writer.add_scalar('eval_spectral_radius', eval_spectral_radius)
 
 
 def record_tb(M, run, num_As, batch, batch_size, frob_loss, grads, loop, model,
-              variables, eval_dataset, eval_A_graphs_tuple, eval_config):
+              variables, eval_dataset, eval_A_dgl, eval_config, tb_writer):
     batch = run * num_As + batch
 
     record_loss_every = max(1 // batch_size, 1)
     if batch % record_loss_every == 0:
-        record_tb_loss(frob_loss)
+        record_tb_loss(frob_loss, batch, tb_writer)
 
     record_params_every = max(300 // batch_size, 1)
     if batch % record_params_every == 0:
-        record_tb_params(batch_size, grads, loop, variables)
+        record_tb_params(batch_size, grads, loop, variables, tb_writer)
 
     record_spectral_every = max(300 // batch_size, 1)
     if batch % record_spectral_every == 0:
-        record_tb_spectral_radius(M, model, eval_dataset, eval_A_graphs_tuple, eval_config)
+        record_tb_spectral_radius(M, model, eval_dataset, eval_A_dgl, eval_config, tb_writer)
 
 
 def clone_model(model, model_config, run_config, matlab_engine):
     clone = create_model(model_config)
 
     dummy_A = pyamg.gallery.poisson((7, 7), type='FE', format='csr')
+    
     dummy_input = csrs_to_graphs_tuple([dummy_A], matlab_engine, coarse_nodes_list=np.array([[0, 1]]),
                                        baseline_P_list=[tf.convert_to_tensor(dummy_A.toarray()[:, [0, 1]])],
                                        node_indicators=run_config.node_indicators,
@@ -296,22 +302,35 @@ def coarsen_As(fine_dataset, model, run_config, matlab_engine, batch_size=64):
     num_batches = len(As) // batch_size
 
     batched_As = list(chunks(As, batch_size))
+    batched_Ss = [None for A in batched_As]
     batched_coarse_nodes_list = list(chunks(coarse_nodes_list, batch_size))
     batched_baseline_P_list = list(chunks(baseline_P_list, batch_size))
-    A_graphs_tuple_batches = [csrs_to_graphs_tuple(batch_As, matlab_engine, coarse_nodes_list=batch_coarse_nodes_list,
-                                                   baseline_P_list=batch_baseline_P_list,
-                                                   node_indicators=run_config.node_indicators,
-                                                   edge_indicators=run_config.edge_indicators
-                                                   )
-                              for batch_As, batch_coarse_nodes_list, batch_baseline_P_list
-                              in zip(batched_As, batched_coarse_nodes_list, batched_baseline_P_list)]
+
+    batched_spasity_patterns_list = []
+    for A, coarse_nodes, baseline_P in zip(batched_As, batched_coarse_nodes_list, batched_baseline_P_list):
+        pattern = P_square_sparsity_pattern(baseline_P, baseline_P.shape[0],
+                                                        coarse_nodes, matlab_engine)
+        batched_spasity_patterns_list.append(pattern)
+
+    bactched_coarse_dataset = DataSet(batched_As, batched_Ss, 
+                                        batched_coarse_nodes_list, 
+                                        batched_baseline_P_list, 
+                                        batched_spasity_patterns_list)
+
+    save_path = make_save_path("coarsened_batch_garlekin_As", len(batched_As), 4, 4)    
+    A_graphs_dgl_batches = [AMGDataset(DataSet(batch_As, batch_Ss, 
+                                        batch_coarse_nodes_list, 
+                                        batch_baseline_P_list, 
+                                        batch_sp_list), dtype=torch.float32, save_path=save_path)
+                              for batch_As, batch_Ss, batch_coarse_nodes_list, batch_baseline_P_list, batch_sp_list
+                              in zip(batched_As, batched_Ss, batched_coarse_nodes_list, batched_baseline_P_list, batched_spasity_patterns_list)]
 
     Ps_square = []
     nodes_list = []
     for batch in tqdm(range(num_batches)):
-        A_graphs_tuple = A_graphs_tuple_batches[batch]
-        P_graphs_tuple = model(A_graphs_tuple)
-        P_square_batch, nodes_batch = graphs_tuple_to_sparse_matrices(P_graphs_tuple, return_nodes=True)
+        A_graphs_dgl = A_graphs_dgl_batches[batch]
+        P_graphs_dgl = model(A_graphs_dgl)
+        P_square_batch, nodes_batch = dgl_graph_to_sparse_matrices(P_graphs_dgl, val_feature='P', return_nodes=True)
         Ps_square.extend(P_square_batch)
         nodes_list.extend(nodes_batch)
 
@@ -321,13 +340,14 @@ def coarsen_As(fine_dataset, model, run_config, matlab_engine, batch_size=64):
         nodes = nodes_list[i]
         coarse_nodes = coarse_nodes_list[i]
         baseline_P = baseline_P_list[i]
-        P = to_prolongation_matrix_tensor(P_square, coarse_nodes, baseline_P, nodes)
-        R = tf.transpose(P)
+        P, _ = to_prolongation_matrix_tensor(P_square, coarse_nodes, baseline_P, nodes)
+        R = torch.transpose(P)
         A_csr = As[i]
-        A = tf.convert_to_tensor(A_csr.toarray(), dtype=tf.float64)
+        A = torch.as_tensor(A_csr.toarray(), dtype=torch.float64)
         tensor_coarse_A = compute_coarse_A(R, A, P)
         coarse_A = csr_matrix(tensor_coarse_A.numpy())
         coarse_As.append(coarse_A)
+
     return coarse_As
 
 
@@ -344,6 +364,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACI
     eval_config.run_config = config.run_config
 
     matlab_engine = matlab.engine.start_matlab()
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     # fix random seeds for reproducibility
     np.random.seed(seed)
@@ -356,24 +377,28 @@ def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACI
     # eval_dataset = create_dataset(1, eval_config.data_config)
     eval_dataset = create_dataset(2, config.data_config, run=0, matlab_engine=matlab_engine)
 
-    eval_dataset_dgl = AMGDataset(eval_dataset, config.data_config)
+    save_path = make_save_path(eval_config.data_config.dist, len(eval_dataset.As), 
+                                    eval_config.data_config.num_unknowns,
+                                    eval_config.data_config.root_num_blocks)
+    eval_dataset_dgl = AMGDataset(eval_dataset, dtype=torch.float32, save_path=save_path)
+    eval_dataset_dgl = eval_dataset_dgl.to(device)
 
     if config.train_config.load_model:
         raise NotImplementedError()
     else:
         model = AMGModel(config.model_config)
+        model = model.to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=config.train_config.learning_rate)
     
     run_name = ''.join(random.choices(string.digits, k=5))  # to make the run_name string unique
     create_results_dir(run_name)
     write_config_file(run_name, config, seed)
 
-    checkpoint_prefix = os.path.join(config.train_config.checkpoint_dir + '/' + run_name, 'ckpt')
+    # checkpoint_prefix = os.path.join(config.train_config.checkpoint_dir + '/' + run_name, 'ckpt')
+    checkpoint_prefix = config.train_config.checkpoint_dir + '/' + run_name + '/ckpt'
+    os.mkdir(config.train_config.checkpoint_dir + '/' + run_name)
     log_dir = config.train_config.tensorboard_dir + '/' + run_name
     writer = SummaryWriter(log_dir=log_dir)
-    # writer.add_scalar("Loss/train", loss, epoch)          ## Remember to use this during train
-
-    assert 1==2, "Stop here"
 
     for run in range(config.train_config.num_runs):
         # we create the data before the training loop starts for efficiency,
@@ -381,15 +406,14 @@ def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACI
         run_dataset = create_dataset(config.train_config.samples_per_run, config.data_config,
                                      run=run, matlab_engine=matlab_engine)
 
-        checkpoint = train_run(run_dataset, run, batch_size, config,
+        train_run(run_dataset, run, batch_size, config,
                                model, optimizer,
                                checkpoint_prefix,
                                eval_dataset, eval_dataset_dgl, eval_config,
-                               matlab_engine)
-        checkpoint.save(file_prefix=checkpoint_prefix)
+                               matlab_engine, device, writer)
 
     if config.train_config.coarsen:
-        old_model = clone_model(model, config.model_config, config.run_config, matlab_engine)
+        old_model = copy.deepcopy(model)
 
         for run in range(config.train_config.num_runs):
             run_dataset = create_dataset(config.train_config.samples_per_run, config.data_config,
@@ -410,12 +434,11 @@ def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACI
             combined_run_dataset = run_dataset + coarse_run_dataset
             combined_run_dataset = combined_run_dataset.shuffle()
 
-            checkpoint = train_run(combined_run_dataset, run, batch_size, config,
+            train_run(combined_run_dataset, run, batch_size, config,
                                    model, optimizer,
                                    checkpoint_prefix,
                                    eval_dataset, eval_dataset_dgl, eval_config,
-                                   matlab_engine)
-            checkpoint.save(file_prefix=checkpoint_prefix)
+                                   matlab_engine, device, writer)
 
 
 if __name__ == '__main__':

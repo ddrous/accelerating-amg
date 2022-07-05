@@ -57,18 +57,20 @@ def compute_Cs(padded_As, Is, padded_Ps, padded_Rs, coarse_As_inv):
 
 
 def two_grid_error_matrices(padded_As, padded_Ps, padded_Rs, padded_Ss):
-    batch_size = padded_As.shape[0].value
-    padded_length = padded_As.shape[1].value
-    Is = torch.eye(padded_length, dtype=padded_As.dtype).repeat([batch_size, 1, 1])
+    batch_size = padded_As.shape[0]
+    Is = torch.eye(padded_As.shape[1], device=padded_As.device, dtype=padded_As.dtype).repeat([batch_size, 1, 1])
+
     coarse_As = compute_coarse_As(padded_Rs, padded_As, padded_Ps)
-    coarse_As_inv = torch.linalg.inv(coarse_As)
+    # coarse_As_inv = torch.linalg.inv(coarse_As)
+    coarse_As_inv = torch.linalg.pinv(coarse_As)
     Cs = compute_Cs(padded_As, Is, padded_Ps, padded_Rs, coarse_As_inv)
     Ms = padded_Ss @ Cs @ padded_Ss
+
     return Ms
 
 
 def two_grid_error_matrix(A, P, R, S):
-    I = torch.eye(A.shape[0].value, dtype=A.dtype)
+    I = torch.eye(A.shape[0], dtype=A.dtype)
     coarse_A = compute_coarse_A(R, A, P)
     coarse_A_inv = torch.linalg.inv(coarse_A)
     C = compute_C(A, I, P, R, coarse_A_inv)
@@ -103,7 +105,7 @@ def extract_diag_blocks(block_diag_As, block_size, root_num_blocks, single_matri
 def block_diagonalize_A_fast(As, root_num_blocks, tensor=False):
     """Returns root_num_blocks**2 matrices that represent the block diagonalization of As"""
     if tensor:
-        total_size = As.shape[1].value
+        total_size = As.shape[1]
     else:
         total_size = As.shape[1]
     block_size = total_size // root_num_blocks
@@ -122,23 +124,26 @@ def block_diagonalize_A_fast(As, root_num_blocks, tensor=False):
 
 def block_diagonalize_A_single(A, root_num_blocks, tensor=False):
     """Returns root_num_blocks**2 matrices that represent the block diagonalization of A"""
-    if tensor:
-        total_size = A.shape[0].value
-    else:
-        total_size = A.shape[0]
+    total_size = A.shape[0]
     block_size = total_size // root_num_blocks
 
     double_W, double_W_conj_t = create_double_W(block_size, root_num_blocks, tensor)
-    block_diag_A = block_diag_multiply(double_W_conj_t, A, double_W)
+    W = torch.as_tensor(double_W, dtype=A.dtype)
+    W_conj_t = torch.as_tensor(double_W_conj_t, dtype=A.dtype)
+    
+    block_diag_A = block_diag_multiply(W_conj_t, A, W)
 
     small_block_size = block_size // root_num_blocks
     blocks = extract_diag_blocks(block_diag_A, small_block_size, root_num_blocks, single_matrix=True)
     blocks = blocks[1:]  # ignore zero mode block
 
-    if tensor:
-        return torch.stack(blocks, axis=0)
-    else:
-        return [csr_matrix(block) for block_list in blocks for block in block_list]
+    # if tensor:
+    #     return torch.stack(blocks, axis=0)
+    # else:
+    #     return [csr_matrix(block) for block_list in blocks for block in block_list]
+
+    return blocks
+    
 
 
 def block_diagonalize_A(A, root_num_blocks):
@@ -171,7 +176,7 @@ def block_diagonalize_A(A, root_num_blocks):
 
 
 def pad_P(P, coarse_nodes):
-    total_size = P.shape[0].value
+    total_size = P.shape[0]
     zero_column = tf.zeros([total_size], dtype=tf.float64)
     P_cols = tf.unstack(P, axis=1)
     full_P_cols = []
@@ -195,14 +200,16 @@ def block_diagonalize_P(P, root_num_blocks, coarse_nodes):
     Returns root_num_blocks**2 matrices that represent the block diagonalization of P
     Only works on block-periodic prolongation matrices
     """
-    total_size = P.shape[0].value
+    total_size = P.shape[0]
     block_size = total_size // root_num_blocks
 
     # we build the padded P matrix column by column, I couldn't find a more efficient way
     # full_P = pad_P(P, coarse_nodes)             #### <<---- NOT NEEDED------ I pass it a paded version of P which is already square
 
     double_W, double_W_conj_t = create_double_W(block_size, root_num_blocks, True)
-    block_diag_full_P = block_diag_multiply(double_W_conj_t, P, double_W)
+    double_W_gpu = torch.as_tensor(double_W, device=P.device, dtype=P.dtype)
+    double_W_gpu_conj_t = torch.as_tensor(double_W_conj_t, device=P.device, dtype=P.dtype)
+    block_diag_full_P = block_diag_multiply(double_W_gpu_conj_t, P, double_W_gpu)
 
     small_block_size = block_size // root_num_blocks
     blocks = extract_diag_blocks(block_diag_full_P, small_block_size, root_num_blocks, single_matrix=True)
@@ -254,6 +261,7 @@ def create_W_matrix(block_size, root_num_blocks, tensor=False):
 
     if tensor:
         W, W_conj_t = torch.as_tensor(W), torch.as_tensor(W_conj_t)
+
     return W, W_conj_t
 
 
@@ -267,6 +275,7 @@ def create_double_W(block_size, root_num_blocks, tensor=False):
 
     if tensor:
         double_W, double_W_conj_t = torch.as_tensor(double_W), torch.as_tensor(double_W_conj_t)
+
     return double_W, double_W_conj_t
 
 

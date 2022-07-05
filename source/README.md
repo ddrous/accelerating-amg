@@ -32,7 +32,7 @@ python train.py -config GRAPH_LAPLACIAN_TRAIN -eval-config GRAPH_LAPLACIAN_EVAL
 
 Model checkpoint is saved at 'training_dir/*model_id*', where *model_id* is a randomly generated 5 digit string.
 
-Tensorboard log files are outputted to 'tb_dir/*model_id*'.
+Tensorboard log files are outputted to 'tensorboard_dir/*model_id*'.
 
 A copy of the .py files and a JSON file that describes the configuration are saved to 'results/*model_id*'.
 

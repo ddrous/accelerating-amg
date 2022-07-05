@@ -71,11 +71,9 @@ class AMGDataset(DGLDataset):
     """
     A class to convert an inhouse dataset (set of matrices) into a DGLdataset
     """
-    def __init__(self, data, data_config):
+    def __init__(self, data, dtype=torch.float32, save_path=f"../data/unamed_data"):
         self.data = data
-        self.dtype = data_config.dtype
-        save_path = f"../data/periodic_delaunay_num_As_{len(data.As)}_num_points_{data_config.num_unknowns}" \
-            f"_rnb_{data_config.root_num_blocks}"
+        self.dtype = dtype
         super(AMGDataset, self).__init__(name='AMG', save_dir=save_path)
 
     def process(self):
@@ -87,9 +85,7 @@ class AMGDataset(DGLDataset):
 
         self.num_graphs = len(As)
         self.graphs = []
-        dtype = torch.float64
-        if self.dtype=='single':
-            dtype = torch.float32
+        dtype = self.dtype
 
         for i in range(self.num_graphs):
             ## Add edges features
@@ -108,22 +104,32 @@ class AMGDataset(DGLDataset):
 
             g = dgl.graph((A_coo.row, A_coo.col))
 
-            g.edata['A'] = torch.as_tensor(A_coo.data, dtype=dtype)
-            g.edata['SP1'] = torch.as_tensor(baseline_edges, dtype=dtype)
-            g.edata['SP0'] = torch.as_tensor(non_baseline_edges, dtype=dtype)
+            g.edata['A'] = torch.as_tensor(A_coo.data, dtype=dtype).reshape((-1,1))
+            g.edata['SP1'] = torch.as_tensor(baseline_edges, dtype=dtype).reshape((-1,1))
+            g.edata['SP0'] = torch.as_tensor(non_baseline_edges, dtype=dtype).reshape((-1,1))
+            g.edata['P'] = torch.zeros_like(g.edata['A'])       ## <<----This will be the predicted P...... The values will be overwritten by the model
 
             ## Add node features
             coarse_indices = np.in1d(range(As[i].shape[0]), coarse_nodes_list[i], assume_unique=True)
             coarse_node_encodings = coarse_indices.astype(np.float64)
             fine_node_encodings = (~coarse_indices).astype(np.float64)
 
-            g.ndata['C'] = torch.as_tensor(coarse_node_encodings, dtype=dtype)
-            g.ndata['F'] = torch.as_tensor(fine_node_encodings, dtype=dtype)
+            g.ndata['C'] = torch.as_tensor(coarse_node_encodings, dtype=dtype).reshape((-1,1))
+            g.ndata['F'] = torch.as_tensor(fine_node_encodings, dtype=dtype).reshape((-1,1))
 
             self.graphs.append(g)
 
         ## Delete data used for creation
         self.__dict__.pop('data', None)
+
+    def to(self, device):
+        """
+        Move the dataset to GPU
+        """
+        for i in range(self.num_graphs):
+            graph = self.graphs[i]
+            self.graphs[i] = graph.to(device)
+        return self
 
     def __getitem__(self, i):
         return self.graphs[i]
@@ -136,6 +142,58 @@ class AMGDataset(DGLDataset):
 
     def __len__(self):
         return self.num_graphs
+
+# class AMGDatasetGPU(AMGDataset):
+#     """
+#     A class to convert an inhouse dataset (set of matrices) into a DGLdataset
+#     """
+#     def __init__(self, data, device):
+#         self.data = data
+#         self.device = device
+#         super(AMGDatasetGPU, self).__init__(name='AMG_GPU', data=data)
+
+#     def process(self):
+#         super().process()
+
+#         gpu_graphs = []
+#         for i in range(len(self.graphs)):
+#             graph = self.graphs[i]
+#             gpu_graphs.append(graph.to(self.device))
+#         self.graphs = gpu_graphs
+
+#         self.__dict__.pop('data', None)
+
+#     def __getitem__(self, i):
+#         return self.graphs[i]
+
+#     def __len__(self):
+#         return self.num_graphs
+
+
+# class AMGDatasetGPU(DGLDataset):
+#     """
+#     A class to convert an inhouse dataset (set of matrices) into a DGLdataset
+#     """
+#     def __init__(self, data, device):
+#         self.data = data
+#         self.device = device
+#         super(AMGDataset, self).__init__(name='AMG_GPU')
+
+
+#     def process(self):
+#         self.graphs = []
+#         for i in range(len(self.data)):
+#             graph = self.data[i]
+#             self.graphs.append(graph.to(self.device))
+
+#         ## Delete data used for creation
+#         self.__dict__.pop('data', None)
+
+#     def __getitem__(self, i):
+#         return self.graphs[i]
+
+#     def __len__(self):
+#         return self.num_graphs
 
 class AMGModel(nn.Module):
     def __init__(self, model_config):
@@ -165,7 +223,7 @@ class AMGModel(nn.Module):
         return W1, W2
 
     def encode_nodes(self, nodes):
-        h = torch.cat([nodes['C'], nodes['F']], 1)
+        h = torch.cat([nodes.data['C'], nodes.data['F']], 1)
         return {'node_encs': self.W2(F.relu(self.W1(h)))}
 
     def encode_edges(self, edges):
@@ -174,9 +232,9 @@ class AMGModel(nn.Module):
 
     def decode_edges(self, edges):
         h = torch.cat([edges.src['h'], edges.dst['h']], 1)          ##Key here
-        return {'new_P': self.W10(F.relu(self.W9(h))).squeeze(1)}
+        return {'P': self.W10(F.relu(self.W9(h))).squeeze(1)}
 
-    def forward(self, g, h):
+    def forward(self, g):
         with g.local_scope():
 
             ## Encode nodes
@@ -204,16 +262,16 @@ class AMGModel(nn.Module):
             g.ndata['h'] = h
             g.apply_edges(self.decode_edges)
 
-            new_P = g.edata['new_P']
-            # return g.edata['new_P']
-            # return g
+            # P = g.edata['P']
+            # return g.edata['P']
+            return g
 
         ### <<------- Trick to have local scope and keep newP ---------->>
-        if 'new_P' in g.edata:
-            return g
-        else:
-            g.edata['new_P'] = new_P
-            return g
+        # if 'P' in g.edata:
+        #     return g
+        # else:
+        #     g.edata['P'] = new_P
+        #     return g
 
 def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_nodes_list=None, baseline_P_list=None,
                          node_indicators=True, edge_indicators=True):
@@ -329,28 +387,31 @@ def to_prolongation_matrix_csr(matrix, coarse_nodes, baseline_P, nodes, normaliz
     return matrix
 
 
-def to_prolongation_matrix_tensor(matrix, coarse_nodes, baseline_P, nodes,
+def to_prolongation_matrix_tensor(full_matrix, coarse_nodes, baseline_P, nodes,
                                   normalize_rows=True,
                                   normalize_rows_by_node=False):
-    dtype = torch.float64
-    matrix = matrix.to_dense().type(dtype)
+    dtype = full_matrix.dtype
+    device = full_matrix.device
+    full_matrix = full_matrix.to_dense()
 
     # prolongation from coarse point to itself should be identity. This corresponds to 1's on the diagonal
-    num_rows = matrix.shape[0]
-    new_diag = torch.ones(num_rows, dtype=dtype)
-    matrix[range(num_rows), range(num_rows)] = new_diag
+    num_rows = full_matrix.shape[0]
+    new_diag = torch.ones(num_rows, device=device, dtype=dtype)
+    full_matrix[range(num_rows), range(num_rows)] = new_diag
     
-    # select only columns corresponding to coarse nodes
-    matrix = matrix[:, coarse_nodes]
+    # Select only columns corresponding to coarse nodes
+    matrix = full_matrix[:, coarse_nodes]
 
-    # set sparsity pattern (interpolatory sets) to be of baseline prolongation
-    baseline_P = torch.as_tensor(baseline_P, dtype=dtype)
-    baseline_zero_mask = torch.as_tensor(torch.not_equal(baseline_P, torch.zeros_like(baseline_P)), dtype=dtype)
+    # Set sparsity pattern (interpolatory sets) to be of baseline prolongation
+    baseline_P = torch.as_tensor(baseline_P.todense(), device=device, dtype=dtype)
+    baseline_zero_mask = torch.as_tensor(torch.not_equal(baseline_P, 
+                                            torch.zeros_like(baseline_P)), 
+                                            device=device, dtype=dtype)
     matrix = matrix * baseline_zero_mask
 
     if normalize_rows:
         if normalize_rows_by_node:
-            baseline_row_sum = nodes
+            baseline_row_sum = torch.as_tensor(nodes, device=device, dtype=dtype)
         else:
             baseline_row_sum = torch.sum(baseline_P, dim=1, dtype=dtype)
 
@@ -363,11 +424,15 @@ def to_prolongation_matrix_tensor(matrix, coarse_nodes, baseline_P, nodes,
 
         matrix = matrix * torch.reshape(baseline_row_sum, (-1, 1))
 
-    return matrix[:, coarse_nodes], matrix
+    ## Refill the square matrix with appropriate columns
+    full_matrix[:, coarse_nodes] = matrix
+
+    return matrix, full_matrix
 
 
 
 def dgl_graph_to_sparse_matrices(dgl_graph, val_feature='P', return_nodes=False):
+    dgl_graph = dgl.unbatch(dgl_graph)
     num_graphs = len(dgl_graph)
     graphs = [dgl_graph[i] for i in range(num_graphs)]
 
@@ -375,9 +440,9 @@ def dgl_graph_to_sparse_matrices(dgl_graph, val_feature='P', return_nodes=False)
     nodes_lists = []
     for graph in graphs:
         indices = torch.stack(graph.edges(), axis=0)
-        indices = graph.edata[val_feature]
+        values = graph.edata[val_feature].squeeze()
         n_nodes = graph.num_nodes()
-        matrix = torch.sparse_coo_tensor(indices, indices, (n_nodes, n_nodes))
+        matrix = torch.sparse_coo_tensor(indices, values, (n_nodes, n_nodes))
          # reordering is required because the pyAMG coarsening step does not preserve indices order
         matrix = matrix.coalesce()
         matrices.append(matrix)
