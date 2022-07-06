@@ -363,6 +363,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACI
     # eval_config = getattr(configs, eval_config)
     eval_config.run_config = config.run_config
 
+    ##-------------->> ACCELERATION CHOICES <<-----------------
     matlab_engine = matlab.engine.start_matlab()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
