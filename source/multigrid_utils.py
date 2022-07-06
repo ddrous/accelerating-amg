@@ -14,9 +14,9 @@ from utils import chunks, most_frequent_splitting
 
 def frob_norm(A, power=1):
     if power == 1:
-        return torch.linalg.norm(torch.as_tensor(A, dtype=torch.float32), axis=[-2, -1])
+        return torch.linalg.norm(torch.as_tensor(A), axis=[-2, -1])
     else:
-        curr_power = torch.as_tensor(A, dtype=torch.float32)
+        curr_power = torch.as_tensor(A)
         for i in range(power - 1):
             curr_power = A @ curr_power
         return torch.linalg.norm(curr_power, axis=[-2, -1]) ** (1 / power)
@@ -207,8 +207,9 @@ def block_diagonalize_P(P, root_num_blocks, coarse_nodes):
     # full_P = pad_P(P, coarse_nodes)             #### <<---- NOT NEEDED------ I pass it a paded version of P which is already square
 
     double_W, double_W_conj_t = create_double_W(block_size, root_num_blocks, True)
-    double_W_gpu = torch.as_tensor(double_W, device=P.device, dtype=P.dtype)
-    double_W_gpu_conj_t = torch.as_tensor(double_W_conj_t, device=P.device, dtype=P.dtype)
+    double_W_gpu = torch.as_tensor(double_W, device=P.device)
+    double_W_gpu_conj_t = torch.as_tensor(double_W_conj_t, device=P.device)
+    P = torch.as_tensor(P, dtype=double_W_gpu.dtype)
     block_diag_full_P = block_diag_multiply(double_W_gpu_conj_t, P, double_W_gpu)
 
     small_block_size = block_size // root_num_blocks
@@ -216,6 +217,11 @@ def block_diagonalize_P(P, root_num_blocks, coarse_nodes):
     blocks = blocks[1:]  # ignore zero mode block
 
     block_coarse_nodes = coarse_nodes[:len(coarse_nodes) // root_num_blocks**2]
+    
+    ##<<<----------------- Ugly trick in case the first nodes are not coarse: FIX THIS
+    block_coarse_nodes = np.array(block_coarse_nodes) % root_num_blocks
+    block_coarse_nodes.sort()
+
     blocks = [block[:, block_coarse_nodes] for block in blocks]
 
     return blocks

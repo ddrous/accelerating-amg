@@ -75,14 +75,16 @@ def create_dataset_from_As(As, data_config, matlab_engine=None):
             orig_splitting = orig_solvers[i].levels[0].splitting
             block_splittings = list(chunks(orig_splitting, data_config.num_unknowns))
             common_block_splitting = most_frequent_splitting(block_splittings)
-            repeated_splitting = np.tile(common_block_splitting, data_config.root_num_blocks ** 2)
+            if np.all(common_block_splitting==0):       ## Just make sure a few fine nodes are selected
+                repeated_splitting = orig_splitting
+            else:
+                repeated_splitting = np.tile(common_block_splitting, data_config.root_num_blocks ** 2)
             splittings.append(repeated_splitting)
 
             # we recompute the Ruge-Stuben prolongation matrix with the modified splitting, and the original strength
             # matrix. We assume the strength matrix is block-circulant (because A is block-circulant)
             A = As[i]
             C = orig_solvers[i].levels[0].C     ## classical_strength_of_connection between nodes
-            # print("Coarse nodes?", C)
             P = direct_interpolation(A, C, repeated_splitting)
             baseline_P_list.append(P)
             # baseline_P_list.append(torch.as_tensor(P.toarray(), dtype=torch.float64))
@@ -115,7 +117,7 @@ def loss(dataset, A_graphs_dgl, P_graphs_dgl,
     if train_config.fourier:
         As = [torch.as_tensor(A.todense(), dtype=torch.complex64) for A in As]
         block_As = [block_diagonalize_A_single(A, data_config.root_num_blocks, tensor=True) for A in As]
-        block_Ss = relaxation_matrices([csr_matrix(block) for block_A in block_As for block in block_A])
+        block_Ss = np.array(relaxation_matrices([csr_matrix(block) for block_A in block_As for block in block_A]))
 
     batch_size = len(dataset.coarse_nodes_list)         ##<<<----- WHY ?????
     total_norm = torch.tensor(0.0, requires_grad=True)
