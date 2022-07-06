@@ -1,7 +1,7 @@
 class DataConfig:
     def __init__(self, dist='lognormal_laplacian_periodic', block_periodic=True,
                 #  num_unknowns=8 ** 2, root_num_blocks=4, splitting='CLJP', add_diag=False,
-                 num_unknowns=2 ** 2, root_num_blocks=4, splitting='CLJP', add_diag=False,
+                 num_unknowns=4 ** 2, root_num_blocks=4, splitting='CLJP', add_diag=False,
                  load_data=True, save_data=False, dtype='single'):
         self.dist = dist  # see function 'generate_A()' for possible distributions
         self.block_periodic = block_periodic
@@ -31,6 +31,21 @@ class RunConfig:
         self.normalize_rows_by_node = normalize_rows_by_node
 
 
+class TrainConfig:
+    # def __init__(self, samples_per_run=256, num_runs=1000, batch_size=32, learning_rate=3e-3, fourier=True,
+    def __init__(self, samples_per_run=64, num_runs=2, batch_size=2, learning_rate=3e-3, fourier=True,
+                 coarsen=False, checkpoint_dir='../train_checkpoints', tensorboard_dir='../tensorboard_dir', load_model=False):
+        self.samples_per_run = samples_per_run
+        self.num_runs = num_runs
+        self.batch_size = batch_size
+        self.learning_rate = learning_rate
+        self.fourier = fourier
+        self.coarsen = coarsen
+        self.checkpoint_dir = checkpoint_dir
+        self.tensorboard_dir = tensorboard_dir
+        self.load_model = load_model
+
+
 class TestConfig:
     def __init__(self, dist='lognormal_laplacian_periodic', splitting='CLJP',
                  test_sizes=(1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072),
@@ -53,21 +68,6 @@ class TestConfig:
         self.postsmoother = postsmoother
         self.coarse_solver = coarse_solver
         # self.coarse_solver = ('gauss_seidel', {'iterations': 20})
-
-
-class TrainConfig:
-    # def __init__(self, samples_per_run=256, num_runs=1000, batch_size=32, learning_rate=3e-3, fourier=True,
-    def __init__(self, samples_per_run=16, num_runs=10, batch_size=2, learning_rate=3e-3, fourier=True,
-                 coarsen=False, checkpoint_dir='../train_checkpoints', tensorboard_dir='../tensorboard_dir', load_model=False):
-        self.samples_per_run = samples_per_run
-        self.num_runs = num_runs
-        self.batch_size = batch_size
-        self.learning_rate = learning_rate
-        self.fourier = fourier
-        self.coarsen = coarsen
-        self.checkpoint_dir = checkpoint_dir
-        self.tensorboard_dir = tensorboard_dir
-        self.load_model = load_model
 
 
 class Config:

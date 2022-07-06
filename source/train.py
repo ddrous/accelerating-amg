@@ -24,7 +24,7 @@ from model import AMGModel, create_model, dgl_graph_to_sparse_matrices, to_prolo
 from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
     two_grid_error_matrix, compute_coarse_A, P_square_sparsity_pattern
 from relaxation import relaxation_matrices
-from utils import create_results_dir, write_config_file, most_frequent_splitting, chunks, make_save_path
+from utils import create_dir, create_results_dir, write_config_file, most_frequent_splitting, chunks, make_save_path
 
 
 def create_dataset(num_As, data_config, run=0, matlab_engine=None):
@@ -393,13 +393,14 @@ def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACI
         model = model.to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=config.train_config.learning_rate)
     
-    run_name = ''.join(random.choices(string.digits, k=5))  # to make the run_name string unique
+    # run_name = ''.join(random.choices(string.digits, k=5))  # to make the run_name string unique
+    run_name = '00000'  # all runs have same name
     create_results_dir(run_name)
     write_config_file(run_name, config, seed)
 
     # checkpoint_prefix = os.path.join(config.train_config.checkpoint_dir + '/' + run_name, 'ckpt')
     checkpoint_prefix = config.train_config.checkpoint_dir + '/' + run_name + '/ckpt'
-    os.mkdir(config.train_config.checkpoint_dir + '/' + run_name)
+    create_dir(config.train_config.checkpoint_dir + '/' + run_name)
     log_dir = config.train_config.tensorboard_dir + '/' + run_name
     writer = SummaryWriter(log_dir=log_dir)
 

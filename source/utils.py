@@ -21,11 +21,14 @@ def most_frequent_splitting(splittings):
     most_frequent_tuple = counter.most_common(1)[0][0]
     return np.array(most_frequent_tuple)
 
+def create_dir(path):
+    if os.path.isdir(path):
+        shutil.rmtree(path)
+    os.makedirs(path)
 
 def create_results_dir(run_name):
     results_dir = '../results/' + run_name
-    os.makedirs(results_dir)
-
+    create_dir(results_dir)
     # make a copy of all Python files, for reproducibility
     local_dir = os.path.dirname(__file__)
     for py_file in glob.glob(local_dir + '/*.py'):
