@@ -1,7 +1,7 @@
 class DataConfig:
     def __init__(self, dist='lognormal_laplacian_periodic', block_periodic=True,
                 #  num_unknowns=8 ** 2, root_num_blocks=4, splitting='CLJP', add_diag=False,
-                 num_unknowns=4 ** 2, root_num_blocks=4, splitting='CLJP', add_diag=False,
+                 num_unknowns=8 ** 2, root_num_blocks=4, splitting='CLJP', add_diag=False,
                  load_data=True, save_data=False, dtype='single'):
         self.dist = dist  # see function 'generate_A()' for possible distributions
         self.block_periodic = block_periodic
@@ -33,7 +33,7 @@ class RunConfig:
 
 class TrainConfig:
     # def __init__(self, samples_per_run=256, num_runs=1000, batch_size=32, learning_rate=3e-3, fourier=True,
-    def __init__(self, samples_per_run=64, num_runs=2, batch_size=2, learning_rate=3e-3, fourier=True,
+    def __init__(self, samples_per_run=256, num_runs=4, batch_size=2, learning_rate=1e-3, fourier=True,
                  coarsen=False, checkpoint_dir='../train_checkpoints', tensorboard_dir='../tensorboard_dir', load_model=False):
         self.samples_per_run = samples_per_run
         self.num_runs = num_runs
@@ -116,6 +116,7 @@ GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.data_config.dist = 'lognormal_laplacian_period
 GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.data_config.load_data = False
 GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.data_config.save_data = True
 GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.data_config.block_periodic = False
+GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.train_config.fourier = False
 
 GRAPH_LAPLACIAN_ABLATION_MP2 = Config()
 GRAPH_LAPLACIAN_ABLATION_MP2.data_config.dist = 'lognormal_laplacian_periodic'

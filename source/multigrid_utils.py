@@ -70,9 +70,9 @@ def two_grid_error_matrices(padded_As, padded_Ps, padded_Rs, padded_Ss):
 
 
 def two_grid_error_matrix(A, P, R, S):
-    I = torch.eye(A.shape[0], dtype=A.dtype)
+    I = torch.eye(A.shape[0], dtype=A.dtype, device=A.device)
     coarse_A = compute_coarse_A(R, A, P)
-    coarse_A_inv = torch.linalg.inv(coarse_A)
+    coarse_A_inv = torch.linalg.pinv(coarse_A)      ###<-------- LOOK FOR REAL INVERSE HERE, NOT PINV
     C = compute_C(A, I, P, R, coarse_A_inv)
     M = S @ C @ S
     return M
@@ -217,7 +217,9 @@ def block_diagonalize_P(P, root_num_blocks, coarse_nodes):
     blocks = blocks[1:]  # ignore zero mode block
 
     block_coarse_nodes = coarse_nodes[:len(coarse_nodes) // root_num_blocks**2]
-    
+    print("BLOCK COARSE NODES", block_coarse_nodes)
+    # assert 1==2, "NO"
+
     ##<<<----------------- Ugly trick in case the first nodes are not coarse: FIX THIS
     block_coarse_nodes = np.array(block_coarse_nodes) % root_num_blocks
     block_coarse_nodes.sort()

@@ -146,7 +146,6 @@ def loss(dataset, A_graphs_dgl, P_graphs_dgl,
             total_norm = total_norm + block_max_norm
 
         else:
-            A = torch.as_tensor(As[i].todense())
             P_square = Ps_square[i]
             coarse_nodes = dataset.coarse_nodes_list[i]
             baseline_P = dataset.baseline_P_list[i]
@@ -154,8 +153,9 @@ def loss(dataset, A_graphs_dgl, P_graphs_dgl,
             P, _ = to_prolongation_matrix_tensor(P_square, coarse_nodes, baseline_P, nodes,
                                               normalize_rows=run_config.normalize_rows,
                                               normalize_rows_by_node=run_config.normalize_rows_by_node)
-            R = torch.transpose(P)
-            S = torch.as_tensor(dataset.Ss[i])
+            R = torch.transpose(P, dim0=-2, dim1=-1)
+            S = torch.as_tensor(dataset.Ss[i], dtype=P.dtype, device=P.device)
+            A = torch.as_tensor(As[i].todense(), dtype=P.dtype, device=P.device)
 
             M = two_grid_error_matrix(A, P, R, S)
 
@@ -241,7 +241,8 @@ def record_tb_params(batch_size, loop, variables, tb_writer):
 
 def record_tb_spectral_radius(M, model, eval_dataset, eval_A_dgl, eval_config, tb_writer):
 
-    spectral_radius = np.abs(np.linalg.eigvals(M.detach().numpy())).max()
+    # spectral_radius = np.abs(np.linalg.eigvals(M.detach().numpy())).max()
+    spectral_radius = torch.abs(torch.linalg.eigvals(M)).max()
     tb_writer.add_scalar('spectral_radius', spectral_radius)
 
     ###<<< ------ Send model to GPU before doing this one ------->> REVALUATE IT
@@ -254,7 +255,8 @@ def record_tb_spectral_radius(M, model, eval_dataset, eval_A_dgl, eval_config, t
                                 eval_config.train_config,
                                 eval_config.data_config)
 
-    eval_spectral_radius = np.abs(np.linalg.eigvals(eval_M.detach().numpy())).max()
+    # eval_spectral_radius = np.abs(np.linalg.eigvals(eval_M.detach().numpy())).max()
+    eval_spectral_radius = torch.abs(torch.linalg.eigvals(eval_M)).max()
     tb_writer.add_scalar('eval_loss', eval_loss)
     tb_writer.add_scalar('eval_spectral_radius', eval_spectral_radius)
 
@@ -355,7 +357,7 @@ def create_coarse_dataset(fine_dataset, model, data_config, run_config, matlab_e
     return create_dataset_from_As(As, data_config)
 
 
-def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACIAN_EVAL', seed=1):
+def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACIAN_EVAL', seed=3):
     config = getattr(configs, config)
     # config = getattr(configs, 'GRAPH_LAPLACIAN_TRAIN')        ## Use this to avoid recreating the dataset all the time
     eval_config = getattr(configs, 'GRAPH_LAPLACIAN_TRAIN_CREATE_DATA')
