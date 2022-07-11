@@ -56,8 +56,7 @@ def create_dataset(num_As, data_config, run=0, matlab_engine=None):
 
 
 def create_dataset_from_As(As, data_config, matlab_engine=None):
-    # if data_config.block_periodic:
-    if False:
+    if data_config.block_periodic:
         Ss = [None] * len(As)  # relaxation matrices are only created per block when calling loss()
     else:
         Ss = relaxation_matrices(As)
@@ -110,7 +109,7 @@ def create_dataset_from_As(As, data_config, matlab_engine=None):
 
 def loss(dataset, A_graphs_dgl, P_graphs_dgl,
                                     run_config, train_config, data_config):
-    
+
     As = dataset.As
     Ps_square, nodes_list = dgl_graph_to_sparse_matrices(P_graphs_dgl, val_feature='P', return_nodes=True)
 
@@ -210,13 +209,10 @@ def train_run(run_dataset, run, batch_size, config,
         frob_loss.backward()
         optimizer.step()
 
-        variables = list(model.parameters())
-        grads = []
-        for var in variables:
-            grads.append(var.grad)
+        variables = model.named_parameters()
 
         if tb_writer is not None:
-            record_tb(M, run, num_As, batch, batch_size, frob_loss.item(), grads, loop, model,
+            record_tb(M, run, num_As, batch, batch_size, frob_loss.item(), loop, model,
                   variables, eval_dataset, eval_A_graphs_tuple, eval_config, tb_writer)
 
 
@@ -224,16 +220,17 @@ def record_tb_loss(frob_loss, iter_nb, tb_writer):
     tb_writer.add_scalar("loss", frob_loss, iter_nb)
 
 
-def record_tb_params(batch_size, grads, loop, variables, tb_writer):
+def record_tb_params(batch_size, loop, variables, tb_writer):
 
     avg_time = getattr(loop, "avg_time", None)
     if avg_time is not None:
         tb_writer.add_scalar('seconds_per_batch', torch.as_tensor(avg_time))
 
-    for i in range(len(variables)):
-        variable = variables[i]
-        variable_name = variable.name
-        grad = grads[i]
+    for name, var in variables:
+        variable = var.data
+        grad = var.grad
+        variable_name = name
+
         if grad is not None:
             tb_writer.add_scalar(variable_name + '_grad', torch.norm(grad) / batch_size)
             tb_writer.add_histogram(variable_name + '_grad_histogram', grad / batch_size)
@@ -244,7 +241,7 @@ def record_tb_params(batch_size, grads, loop, variables, tb_writer):
 
 def record_tb_spectral_radius(M, model, eval_dataset, eval_A_dgl, eval_config, tb_writer):
 
-    spectral_radius = np.abs(np.linalg.eigvals(M.numpy())).max()
+    spectral_radius = np.abs(np.linalg.eigvals(M.detach().numpy())).max()
     tb_writer.add_scalar('spectral_radius', spectral_radius)
 
     ###<<< ------ Send model to GPU before doing this one ------->> REVALUATE IT
@@ -257,12 +254,12 @@ def record_tb_spectral_radius(M, model, eval_dataset, eval_A_dgl, eval_config, t
                                 eval_config.train_config,
                                 eval_config.data_config)
 
-    eval_spectral_radius = np.abs(np.linalg.eigvals(eval_M.numpy())).max()
+    eval_spectral_radius = np.abs(np.linalg.eigvals(eval_M.detach().numpy())).max()
     tb_writer.add_scalar('eval_loss', eval_loss)
     tb_writer.add_scalar('eval_spectral_radius', eval_spectral_radius)
 
 
-def record_tb(M, run, num_As, batch, batch_size, frob_loss, grads, loop, model,
+def record_tb(M, run, num_As, batch, batch_size, frob_loss, loop, model,
               variables, eval_dataset, eval_A_dgl, eval_config, tb_writer):
     batch = run * num_As + batch
 
@@ -272,7 +269,7 @@ def record_tb(M, run, num_As, batch, batch_size, frob_loss, grads, loop, model,
 
     record_params_every = max(300 // batch_size, 1)
     if batch % record_params_every == 0:
-        record_tb_params(batch_size, grads, loop, variables, tb_writer)
+        record_tb_params(batch_size, loop, variables, tb_writer)
 
     record_spectral_every = max(300 // batch_size, 1)
     if batch % record_spectral_every == 0:

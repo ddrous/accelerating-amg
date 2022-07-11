@@ -115,6 +115,7 @@ GRAPH_LAPLACIAN_TRAIN_CREATE_DATA = Config()
 GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.data_config.dist = 'lognormal_laplacian_periodic'
 GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.data_config.load_data = False
 GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.data_config.save_data = True
+GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.data_config.block_periodic = False
 
 GRAPH_LAPLACIAN_ABLATION_MP2 = Config()
 GRAPH_LAPLACIAN_ABLATION_MP2.data_config.dist = 'lognormal_laplacian_periodic'

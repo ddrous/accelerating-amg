@@ -107,7 +107,7 @@ class AMGDataset(DGLDataset):
             g.edata['A'] = torch.as_tensor(A_coo.data, dtype=dtype).reshape((-1,1))
             g.edata['SP1'] = torch.as_tensor(baseline_edges, dtype=dtype).reshape((-1,1))
             g.edata['SP0'] = torch.as_tensor(non_baseline_edges, dtype=dtype).reshape((-1,1))
-            g.edata['P'] = torch.zeros_like(g.edata['A'])       ## <<----This will be the predicted P...... The values will be overwritten by the model
+            # g.edata['P'] = torch.zeros_like(g.edata['A'])       ## <<----This will be the predicted P...... The values will be overwritten by the model
 
             ## Add node features
             coarse_indices = np.in1d(range(As[i].shape[0]), coarse_nodes_list[i], assume_unique=True)
@@ -262,16 +262,17 @@ class AMGModel(nn.Module):
             g.ndata['h'] = h
             g.apply_edges(self.decode_edges)
 
-            # P = g.edata['P']
+
+            P = g.edata['P']
             # return g.edata['P']
-            return g
+            # return g
 
         ### <<------- Trick to have local scope and keep newP ---------->>
         # if 'P' in g.edata:
         #     return g
         # else:
-        #     g.edata['P'] = new_P
-        #     return g
+        g.edata['P'] = P
+        return g
 
 def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_nodes_list=None, baseline_P_list=None,
                          node_indicators=True, edge_indicators=True):
