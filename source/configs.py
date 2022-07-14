@@ -24,7 +24,8 @@ class ModelConfig:
 
 
 class RunConfig:
-    def __init__(self, node_indicators=True, edge_indicators=True, normalize_rows=True, normalize_rows_by_node=False):
+    # def __init__(self, node_indicators=True, edge_indicators=True, normalize_rows=True, normalize_rows_by_node=False):
+    def __init__(self, node_indicators=True, edge_indicators=True, normalize_rows=False, normalize_rows_by_node=False):
         self.node_indicators = node_indicators
         self.edge_indicators = edge_indicators
         self.normalize_rows = normalize_rows
@@ -33,7 +34,7 @@ class RunConfig:
 
 class TrainConfig:
     # def __init__(self, samples_per_run=256, num_runs=1000, batch_size=32, learning_rate=3e-3, fourier=True,
-    def __init__(self, samples_per_run=256, num_runs=4, batch_size=2, learning_rate=1e-3, fourier=True,
+    def __init__(self, samples_per_run=256, num_runs=1, batch_size=1, learning_rate=1e-3, fourier=True,
                  coarsen=False, checkpoint_dir='../train_checkpoints', tensorboard_dir='../tensorboard_dir', load_model=False):
         self.samples_per_run = samples_per_run
         self.num_runs = num_runs

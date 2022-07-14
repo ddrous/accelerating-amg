@@ -118,7 +118,8 @@ def loss(dataset, A_graphs_dgl, P_graphs_dgl,
         block_As = [block_diagonalize_A_single(A, data_config.root_num_blocks, tensor=True) for A in As]
         block_Ss = np.array(relaxation_matrices([csr_matrix(block) for block_A in block_As for block in block_A]))
 
-    batch_size = len(dataset.coarse_nodes_list)         ##<<<----- WHY ?????
+    # batch_size = len(dataset.coarse_nodes_list)         ##<<<----- WHY ?????
+    batch_size = len(Ps_square)         ##<<<----- WHY ?????
     total_norm = torch.tensor(0.0, requires_grad=True)
     for i in range(batch_size):
         if train_config.fourier:
@@ -150,7 +151,7 @@ def loss(dataset, A_graphs_dgl, P_graphs_dgl,
             coarse_nodes = dataset.coarse_nodes_list[i]
             baseline_P = dataset.baseline_P_list[i]
             nodes = nodes_list[i]
-            P, _ = to_prolongation_matrix_tensor(P_square, coarse_nodes, baseline_P, nodes,
+            P, full_P = to_prolongation_matrix_tensor(P_square, coarse_nodes, baseline_P, nodes,
                                               normalize_rows=run_config.normalize_rows,
                                               normalize_rows_by_node=run_config.normalize_rows_by_node)
             R = torch.transpose(P, dim0=-2, dim1=-1)
@@ -159,7 +160,10 @@ def loss(dataset, A_graphs_dgl, P_graphs_dgl,
 
             M = two_grid_error_matrix(A, P, R, S)
 
-            norm = frob_norm(M, power=1)
+            # norm = frob_norm(M)
+            # norm = frob_norm(P_square.to_dense())     ### This one works !!!!
+            norm = frob_norm(full_P)
+
             total_norm = total_norm + norm
 
     return total_norm / batch_size, M  # M is chosen randomly - the last in the batch
@@ -176,7 +180,7 @@ def save_model_and_optimizer(checkpoint_prefix, model, optimizer, global_step):
 def train_run(run_dataset, run, batch_size, config,
               model, optimizer, checkpoint_prefix,
               eval_dataset, eval_A_graphs_tuple, eval_config, 
-              matlab_engine=None, device="cpu", tb_writer=None):
+              matlab_engine=None, device="cpu", nb_iter_batch=[None], tb_writer=None):
     num_As = len(run_dataset.As)
     if num_As % batch_size != 0:
         raise RuntimeError("batch size must divide training data size")
@@ -209,22 +213,41 @@ def train_run(run_dataset, run, batch_size, config,
         frob_loss.backward()
         optimizer.step()
 
+        nb_iter_batch[0] += 1
+
         variables = model.named_parameters()
 
         if tb_writer is not None:
             record_tb(M, run, num_As, batch, batch_size, frob_loss.item(), loop, model,
-                  variables, eval_dataset, eval_A_graphs_tuple, eval_config, tb_writer)
+                  variables, eval_dataset, eval_A_graphs_tuple, eval_config, nb_iter_batch[0], tb_writer)
+
+
+def record_tb(M, run, num_As, batch, batch_size, frob_loss, loop, model,
+              variables, eval_dataset, eval_A_dgl, eval_config, iter_nb, tb_writer):
+    batch = run * num_As + batch
+
+    record_loss_every = max(1 // batch_size, 1)
+    if batch % record_loss_every == 0:
+        record_tb_loss(frob_loss, iter_nb, tb_writer)
+
+    record_params_every = max(300 // batch_size, 1)
+    if batch % record_params_every == 0:
+        record_tb_params(batch_size, loop, variables, iter_nb, tb_writer)
+
+    record_spectral_every = max(300 // batch_size, 1)
+    if batch % record_spectral_every == 0:
+        record_tb_spectral_radius(M, model, eval_dataset, eval_A_dgl, eval_config, iter_nb, tb_writer)
 
 
 def record_tb_loss(frob_loss, iter_nb, tb_writer):
     tb_writer.add_scalar("loss", frob_loss, iter_nb)
 
 
-def record_tb_params(batch_size, loop, variables, tb_writer):
+def record_tb_params(batch_size, loop, variables, iter_nb, tb_writer):
 
     avg_time = getattr(loop, "avg_time", None)
     if avg_time is not None:
-        tb_writer.add_scalar('seconds_per_batch', torch.as_tensor(avg_time))
+        tb_writer.add_scalar('seconds_per_batch', torch.as_tensor(avg_time), iter_nb)
 
     for name, var in variables:
         variable = var.data
@@ -232,18 +255,18 @@ def record_tb_params(batch_size, loop, variables, tb_writer):
         variable_name = name
 
         if grad is not None:
-            tb_writer.add_scalar(variable_name + '_grad', torch.norm(grad) / batch_size)
-            tb_writer.add_histogram(variable_name + '_grad_histogram', grad / batch_size)
-            tb_writer.add_scalar(variable_name + '_grad_fraction_dead', torch.count_nonzero(grad)/torch.numel(grad))
-            tb_writer.add_scalar(variable_name + '_value', torch.norm(variable))
-            tb_writer.add_histogram(variable_name + '_value_histogram', variable)
+            tb_writer.add_scalar(variable_name + '_grad', torch.norm(grad) / batch_size, iter_nb)
+            tb_writer.add_histogram(variable_name + '_grad_histogram', grad / batch_size, iter_nb)
+            tb_writer.add_scalar(variable_name + '_grad_fraction_dead', torch.count_nonzero(grad)/torch.numel(grad), iter_nb)
+            tb_writer.add_scalar(variable_name + '_value', torch.norm(variable), iter_nb)
+            tb_writer.add_histogram(variable_name + '_value_histogram', variable, iter_nb)
 
 
-def record_tb_spectral_radius(M, model, eval_dataset, eval_A_dgl, eval_config, tb_writer):
+def record_tb_spectral_radius(M, model, eval_dataset, eval_A_dgl, eval_config, iter_nb, tb_writer):
 
     # spectral_radius = np.abs(np.linalg.eigvals(M.detach().numpy())).max()
     spectral_radius = torch.abs(torch.linalg.eigvals(M)).max()
-    tb_writer.add_scalar('spectral_radius', spectral_radius)
+    tb_writer.add_scalar('spectral_radius', spectral_radius, iter_nb)
 
     ###<<< ------ Send model to GPU before doing this one ------->> REVALUATE IT
     eval_dataloader = GraphDataLoader(eval_A_dgl, batch_size=len(eval_A_dgl))
@@ -257,25 +280,8 @@ def record_tb_spectral_radius(M, model, eval_dataset, eval_A_dgl, eval_config, t
 
     # eval_spectral_radius = np.abs(np.linalg.eigvals(eval_M.detach().numpy())).max()
     eval_spectral_radius = torch.abs(torch.linalg.eigvals(eval_M)).max()
-    tb_writer.add_scalar('eval_loss', eval_loss)
-    tb_writer.add_scalar('eval_spectral_radius', eval_spectral_radius)
-
-
-def record_tb(M, run, num_As, batch, batch_size, frob_loss, loop, model,
-              variables, eval_dataset, eval_A_dgl, eval_config, tb_writer):
-    batch = run * num_As + batch
-
-    record_loss_every = max(1 // batch_size, 1)
-    if batch % record_loss_every == 0:
-        record_tb_loss(frob_loss, batch, tb_writer)
-
-    record_params_every = max(300 // batch_size, 1)
-    if batch % record_params_every == 0:
-        record_tb_params(batch_size, loop, variables, tb_writer)
-
-    record_spectral_every = max(300 // batch_size, 1)
-    if batch % record_spectral_every == 0:
-        record_tb_spectral_radius(M, model, eval_dataset, eval_A_dgl, eval_config, tb_writer)
+    tb_writer.add_scalar('eval_loss', eval_loss, iter_nb)
+    tb_writer.add_scalar('eval_spectral_radius', eval_spectral_radius, iter_nb)
 
 
 def clone_model(model, model_config, run_config, matlab_engine):
@@ -392,8 +398,8 @@ def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACI
         model = model.to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=config.train_config.learning_rate)
     
-    # run_name = ''.join(random.choices(string.digits, k=5))  # to make the run_name string unique
-    run_name = '00000'  # all runs have same name
+    run_name = ''.join(random.choices(string.digits, k=5))  # to make the run_name string unique
+    # run_name = '00000'  # all runs have same name
     create_results_dir(run_name)
     write_config_file(run_name, config, seed)
 
@@ -402,6 +408,9 @@ def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACI
     create_dir(config.train_config.checkpoint_dir + '/' + run_name)
     log_dir = config.train_config.tensorboard_dir + '/' + run_name
     writer = SummaryWriter(log_dir=log_dir)
+
+    # global nb_iter_batch
+    nb_iter_batch = [0]
 
     for run in range(config.train_config.num_runs):
         # we create the data before the training loop starts for efficiency,
@@ -413,7 +422,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACI
                                model, optimizer,
                                checkpoint_prefix,
                                eval_dataset, eval_dataset_dgl, eval_config,
-                               matlab_engine, device, writer)
+                               matlab_engine, device, nb_iter_batch, writer)
 
     if config.train_config.coarsen:
         old_model = copy.deepcopy(model)

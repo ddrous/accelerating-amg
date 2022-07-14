@@ -405,18 +405,20 @@ def to_prolongation_matrix_tensor(full_matrix, coarse_nodes, baseline_P, nodes,
 
     # Set sparsity pattern (interpolatory sets) to be of baseline prolongation
     baseline_P = torch.as_tensor(baseline_P.todense(), device=device, dtype=dtype)
-    baseline_zero_mask = torch.as_tensor(torch.not_equal(baseline_P, 
-                                            torch.zeros_like(baseline_P)), 
+    baseline_zero_mask = torch.as_tensor(torch.not_equal(baseline_P, torch.zeros_like(baseline_P)), 
                                             device=device, dtype=dtype)
     matrix = matrix * baseline_zero_mask
 
     if normalize_rows:
         if normalize_rows_by_node:
-            baseline_row_sum = torch.as_tensor(nodes, device=device, dtype=dtype)
+            baseline_row_sum = torch.as_tensor(nodes, device=device, dtype=dtype)      ### Just nodes
         else:
-            baseline_row_sum = torch.sum(baseline_P, dim=1, dtype=dtype)
+            baseline_row_sum = torch.sum(baseline_P, dim=1, dtype=dtype)                ### Basically just 1 
 
         matrix_row_sum = torch.sum(matrix, dim=1, dtype=dtype)
+
+        # print("\nCOMPARE", baseline_row_sum)
+        # print("\nCOMPARE TO", matrix_row_sum)
 
         # there might be a few rows that are all 0's - corresponding to fine points that are not connected to any
         # coarse point. We use "nan_to_num" to put these rows to 0's
