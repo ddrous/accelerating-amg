@@ -411,21 +411,23 @@ def to_prolongation_matrix_tensor(full_matrix, coarse_nodes, baseline_P, nodes,
 
     if normalize_rows:
         if normalize_rows_by_node:
-            baseline_row_sum = torch.as_tensor(nodes, device=device, dtype=dtype)      ### Just nodes
+            baseline_row_sum = torch.as_tensor(nodes, device=device, dtype=dtype).reshape(-1,1)      ### Just nodes
         else:
-            baseline_row_sum = torch.sum(baseline_P, dim=1, dtype=dtype)                ### Basically just 1 
+            baseline_row_sum = torch.sum(baseline_P, dim=1, dtype=dtype).reshape(-1,1)         ### Basically just 1 
 
-        matrix_row_sum = torch.sum(matrix, dim=1, dtype=dtype)
+        # matrix_row_sum = torch.sum(matrix, dim=1, dtype=dtype).reshape(-1,1)
+        matrix_row_sum = matrix.sum(dim=1).reshape(-1,1)
 
         # print("\nCOMPARE", baseline_row_sum)
         # print("\nCOMPARE TO", matrix_row_sum)
 
         # there might be a few rows that are all 0's - corresponding to fine points that are not connected to any
         # coarse point. We use "nan_to_num" to put these rows to 0's
-        matrix = torch.divide(matrix, torch.reshape(matrix_row_sum, (-1, 1)))
+        # matrix = torch.divide(matrix, torch.reshape(matrix_row_sum, (-1, 1)))
+        matrix = matrix / matrix_row_sum
         matrix = torch.nan_to_num(matrix, nan=0.0, posinf=0.0, neginf=0.0)
 
-        matrix = matrix * torch.reshape(baseline_row_sum, (-1, 1))
+        matrix = matrix * baseline_row_sum
 
     ## Refill the square matrix with appropriate columns
     full_matrix[:, coarse_nodes] = matrix

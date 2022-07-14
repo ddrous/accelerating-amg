@@ -159,10 +159,11 @@ def loss(dataset, A_graphs_dgl, P_graphs_dgl,
             A = torch.as_tensor(As[i].todense(), dtype=P.dtype, device=P.device)
 
             M = two_grid_error_matrix(A, P, R, S)
+            # M = P.T @ full_P @ P
 
-            # norm = frob_norm(M)
+            norm = frob_norm(M)
             # norm = frob_norm(P_square.to_dense())     ### This one works !!!!
-            norm = frob_norm(full_P)
+            # norm = frob_norm(full_P)
 
             total_norm = total_norm + norm
 
