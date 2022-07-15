@@ -1,5 +1,6 @@
 import copy
 from email.policy import default
+from locale import normalize
 import os
 import random
 import string
@@ -22,7 +23,7 @@ from data import generate_A
 from dataset import DataSet
 from model import AMGModel, create_model, dgl_graph_to_sparse_matrices, to_prolongation_matrix_tensor, AMGDataset
 from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
-    two_grid_error_matrix, compute_coarse_A, P_square_sparsity_pattern
+    two_grid_error_matrix, compute_coarse_A, P_square_sparsity_pattern, normalized_loss
 from relaxation import relaxation_matrices
 from utils import create_dir, create_results_dir, write_config_file, most_frequent_splitting, chunks, make_save_path
 
@@ -154,6 +155,9 @@ def loss(dataset, A_graphs_dgl, P_graphs_dgl,
             P, full_P = to_prolongation_matrix_tensor(P_square, coarse_nodes, baseline_P, nodes,
                                               normalize_rows=run_config.normalize_rows,
                                               normalize_rows_by_node=run_config.normalize_rows_by_node)
+
+            # P = torch.nn.functional.normalize(P, p=1)
+
             R = torch.transpose(P, dim0=-2, dim1=-1)
             S = torch.as_tensor(dataset.Ss[i], dtype=P.dtype, device=P.device)
             A = torch.as_tensor(As[i].todense(), dtype=P.dtype, device=P.device)
@@ -162,10 +166,15 @@ def loss(dataset, A_graphs_dgl, P_graphs_dgl,
             # M = P.T @ full_P @ P
 
             norm = frob_norm(M)
+            # norm = 0
             # norm = frob_norm(P_square.to_dense())     ### This one works !!!!
             # norm = frob_norm(full_P)
+            # normalization_loss = 0
+            normalization_loss = normalized_loss(P)
+            # print("\n", P.sum(dim=1))
+            eps = 1.0
 
-            total_norm = total_norm + norm
+            total_norm = total_norm + (1-eps)*norm + eps*normalization_loss
 
     return total_norm / batch_size, M  # M is chosen randomly - the last in the batch
 

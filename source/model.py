@@ -232,7 +232,8 @@ class AMGModel(nn.Module):
 
     def decode_edges(self, edges):
         h = torch.cat([edges.src['h'], edges.dst['h']], 1)          ##Key here
-        return {'P': self.W10(F.relu(self.W9(h))).squeeze(1)}
+        # return {'P': self.W10(F.relu(self.W9(h))).squeeze(1)}
+        return {'P': self.W10(F.relu(self.W9(h))).abs().squeeze(1)}
 
     def forward(self, g):
         with g.local_scope():
@@ -424,10 +425,13 @@ def to_prolongation_matrix_tensor(full_matrix, coarse_nodes, baseline_P, nodes,
         # there might be a few rows that are all 0's - corresponding to fine points that are not connected to any
         # coarse point. We use "nan_to_num" to put these rows to 0's
         # matrix = torch.divide(matrix, torch.reshape(matrix_row_sum, (-1, 1)))
-        matrix = matrix / matrix_row_sum
-        matrix = torch.nan_to_num(matrix, nan=0.0, posinf=0.0, neginf=0.0)
 
-        matrix = matrix * baseline_row_sum
+        # matrix = matrix / matrix_row_sum
+        # matrix = torch.nan_to_num(matrix, nan=0.0, posinf=0.0, neginf=0.0)
+
+        # matrix = torch.nn.functional.normalize(matrix, p=1)
+
+        # matrix = matrix * baseline_row_sum
 
     ## Refill the square matrix with appropriate columns
     full_matrix[:, coarse_nodes] = matrix

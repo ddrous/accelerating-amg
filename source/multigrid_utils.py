@@ -14,12 +14,18 @@ from utils import chunks, most_frequent_splitting
 
 def frob_norm(A, power=1):
     if power == 1:
-        return torch.linalg.norm(torch.as_tensor(A), axis=[-2, -1])
+        return torch.linalg.norm(torch.as_tensor(A), axis=[-2, -1], ord='fro')
     else:
         curr_power = torch.as_tensor(A)
         for i in range(power - 1):
             curr_power = A @ curr_power
-        return torch.linalg.norm(curr_power, axis=[-2, -1]) ** (1 / power)
+        return torch.linalg.norm(curr_power, axis=[-2, -1], ord='fro') ** (1 / power)
+
+def normalized_loss(A):
+    A = torch.as_tensor(A)
+    # num_rows = A.shape[0]
+    row_sum = A.sum(dim=1)
+    return torch.abs(row_sum - 1.0).sum().item()
 
 
 def P_square_sparsity_pattern(P, size, coarse_nodes, matlab_engine):
