@@ -390,7 +390,7 @@ def to_prolongation_matrix_csr(matrix, coarse_nodes, baseline_P, nodes, normaliz
 
 
 def to_prolongation_matrix_tensor(full_matrix, coarse_nodes, baseline_P, nodes,
-                                  normalize_rows=True,
+                                  normalize_rows=False,
                                   normalize_rows_by_node=False):
     dtype = full_matrix.dtype
     device = full_matrix.device
@@ -426,12 +426,12 @@ def to_prolongation_matrix_tensor(full_matrix, coarse_nodes, baseline_P, nodes,
         # coarse point. We use "nan_to_num" to put these rows to 0's
         # matrix = torch.divide(matrix, torch.reshape(matrix_row_sum, (-1, 1)))
 
-        # matrix = matrix / matrix_row_sum
-        # matrix = torch.nan_to_num(matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        matrix = matrix / matrix_row_sum
+        matrix = torch.nan_to_num(matrix, nan=0.0, posinf=0.0, neginf=0.0)
 
         # matrix = torch.nn.functional.normalize(matrix, p=1)
 
-        # matrix = matrix * baseline_row_sum
+        matrix = matrix * baseline_row_sum
 
     ## Refill the square matrix with appropriate columns
     full_matrix[:, coarse_nodes] = matrix

@@ -153,28 +153,28 @@ def loss(dataset, A_graphs_dgl, P_graphs_dgl,
             baseline_P = dataset.baseline_P_list[i]
             nodes = nodes_list[i]
             P, full_P = to_prolongation_matrix_tensor(P_square, coarse_nodes, baseline_P, nodes,
-                                              normalize_rows=run_config.normalize_rows,
-                                              normalize_rows_by_node=run_config.normalize_rows_by_node)
-
-            # P = torch.nn.functional.normalize(P, p=1)
+                                              normalize_rows=False, ## Row-normalisation is enforced through a loss function
+                                              normalize_rows_by_node=False)
 
             R = torch.transpose(P, dim0=-2, dim1=-1)
             S = torch.as_tensor(dataset.Ss[i], dtype=P.dtype, device=P.device)
             A = torch.as_tensor(As[i].todense(), dtype=P.dtype, device=P.device)
 
             M = two_grid_error_matrix(A, P, R, S)
-            # M = P.T @ full_P @ P
 
+            ## A loss fucntion to minimize the frobenius norm
             norm = frob_norm(M)
-            # norm = 0
-            # norm = frob_norm(P_square.to_dense())     ### This one works !!!!
-            # norm = frob_norm(full_P)
-            # normalization_loss = 0
-            normalization_loss = normalized_loss(P)
-            # print("\n", P.sum(dim=1))
-            eps = 1.0
 
-            total_norm = total_norm + (1-eps)*norm + eps*normalization_loss
+            ## A loss function to force the row-wize sum = 1
+            true_or_false = torch.as_tensor(run_config.normalize_rows, dtype=P.dtype)
+            normalization_loss = normalized_loss(P) * true_or_false
+            # normalization_loss = torch.tensor(0.0, requires_grad=True)
+            # if run_config.normalize_rows:
+            #     normalization_loss = normalized_loss(P)
+
+            # print("\n", P.sum(dim=1))
+
+            total_norm = total_norm + norm + normalization_loss
 
     return total_norm / batch_size, M  # M is chosen randomly - the last in the batch
 
@@ -421,6 +421,11 @@ def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACI
 
     # global nb_iter_batch
     nb_iter_batch = [0]
+
+    ## We create the dataset before the loop starts. Use the same dataset for every run, 
+    #  effectively turning 'runs' into 'epochs'
+    # run_dataset = create_dataset(config.train_config.samples_per_run, config.data_config,
+    #                                  run=0, matlab_engine=matlab_engine)
 
     for run in range(config.train_config.num_runs):
         # we create the data before the training loop starts for efficiency,
