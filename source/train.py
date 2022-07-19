@@ -1,6 +1,4 @@
 import copy
-from email.policy import default
-from locale import normalize
 import os
 import random
 import string
@@ -21,7 +19,7 @@ from tqdm import tqdm
 import configs
 from data import generate_A
 from dataset import DataSet
-from model import AMGModel, create_model, dgl_graph_to_sparse_matrices, to_prolongation_matrix_tensor, AMGDataset
+from model import AMGModel, dgl_graph_to_sparse_matrices, to_prolongation_matrix_tensor, AMGDataset
 from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
     two_grid_error_matrix, compute_coarse_A, P_square_sparsity_pattern, normalized_loss
 from relaxation import relaxation_matrices
@@ -140,6 +138,8 @@ def loss(dataset, A_graphs_dgl, P_graphs_dgl,
             Rs = torch.conj(torch.transpose(Ps, dim0=1, dim1=2))
             Ss = torch.as_tensor(block_Ss[num_blocks * i:num_blocks * (i + 1)], device=As.device, dtype=As.dtype)
 
+            print("Number of Ps NaNs", torch.nonzero(torch.isnan(Rs)))
+
             Ms = two_grid_error_matrices(As, Ps, Rs, Ss)
             M = Ms[-1]  # for logging
             block_norms = torch.abs(frob_norm(Ms, power=1))
@@ -211,6 +211,9 @@ def train_run(run_dataset, run, batch_size, config,
 
         batch_dataloader = GraphDataLoader(batch_A_dgl_dataset_gpu, batch_size=batch_size)       ## Only 1 batch can be made
         batch_P_dgl_dataset = model(next(iter(batch_dataloader)))
+        print("DOC:", batch_P_dgl_dataset.edata['P'])
+        print("Number of Graph NaNs", torch.nonzero(torch.isnan(batch_P_dgl_dataset.edata['P'].view(-1))))
+
         frob_loss, M = loss(batch_dataset, batch_A_dgl_dataset_gpu, batch_P_dgl_dataset,
                             config.run_config, config.train_config, config.data_config)
 
@@ -265,6 +268,9 @@ def record_tb_params(batch_size, loop, variables, iter_nb, tb_writer):
         variable_name = name
 
         if grad is not None:
+            # grad = torch.nan_to_num(grad, nan=0.0, posinf=0.0, neginf=0.0)      ## Remeber to Delete this !
+            # variable = torch.nan_to_num(variable, nan=0.0, posinf=0.0, neginf=0.0)      ## Delete this !
+
             tb_writer.add_scalar(variable_name + '_grad', torch.norm(grad) / batch_size, iter_nb)
             tb_writer.add_histogram(variable_name + '_grad_histogram', grad / batch_size, iter_nb)
             tb_writer.add_scalar(variable_name + '_grad_fraction_dead', torch.count_nonzero(grad)/torch.numel(grad), iter_nb)
@@ -282,6 +288,8 @@ def record_tb_spectral_radius(M, model, eval_dataset, eval_A_dgl, eval_config, i
     eval_dataloader = GraphDataLoader(eval_A_dgl, batch_size=len(eval_A_dgl))
     eval_P_dgl_dataset = model(next(iter(eval_dataloader)))
 
+    # print("COARSE As", eval_P_dgl_dataset)
+
     eval_loss, eval_M = loss(eval_dataset, eval_A_dgl, 
                                 eval_P_dgl_dataset,
                                 eval_config.run_config,
@@ -292,20 +300,6 @@ def record_tb_spectral_radius(M, model, eval_dataset, eval_A_dgl, eval_config, i
     eval_spectral_radius = torch.abs(torch.linalg.eigvals(eval_M)).max()
     tb_writer.add_scalar('eval_loss', eval_loss, iter_nb)
     tb_writer.add_scalar('eval_spectral_radius', eval_spectral_radius, iter_nb)
-
-
-def clone_model(model, model_config, run_config, matlab_engine):
-    clone = create_model(model_config)
-
-    dummy_A = pyamg.gallery.poisson((7, 7), type='FE', format='csr')
-    
-    dummy_input = csrs_to_graphs_tuple([dummy_A], matlab_engine, coarse_nodes_list=np.array([[0, 1]]),
-                                       baseline_P_list=[tf.convert_to_tensor(dummy_A.toarray()[:, [0, 1]])],
-                                       node_indicators=run_config.node_indicators,
-                                       edge_indicators=run_config.edge_indicators)
-    clone(dummy_input)
-    [var_clone.assign(var_orig) for var_clone, var_orig in zip(clone.get_all_variables(), model.get_all_variables())]
-    return clone
 
 
 def coarsen_As(fine_dataset, model, run_config, matlab_engine, batch_size=64):

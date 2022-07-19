@@ -4,7 +4,6 @@ from functools import partial
 import fire
 import matlab.engine
 import numpy as np
-import tensorflow as tf
 from tqdm import tqdm
 
 import configs
@@ -17,8 +16,6 @@ from ruge_stuben_custom_solver import ruge_stuben_custom_solver
 def test_size(model_name, graph_model, size, test_config, run_config, matlab_engine):
     model_prolongation = partial(model, graph_model=graph_model,
                                  normalize_rows_by_node=run_config.normalize_rows_by_node,
-                                 edge_indicators=run_config.edge_indicators,
-                                 node_indicators=run_config.node_indicators,
                                  matlab_engine=matlab_engine)
     baseline_prolongation = baseline
 

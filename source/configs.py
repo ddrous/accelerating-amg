@@ -25,16 +25,14 @@ class ModelConfig:
 
 class RunConfig:
     # def __init__(self, node_indicators=True, edge_indicators=True, normalize_rows=True, normalize_rows_by_node=False):
-    def __init__(self, node_indicators=True, edge_indicators=True, normalize_rows=True, normalize_rows_by_node=False):
-        self.node_indicators = node_indicators
-        self.edge_indicators = edge_indicators
+    def __init__(self, normalize_rows=True, normalize_rows_by_node=False):
         self.normalize_rows = normalize_rows
         self.normalize_rows_by_node = normalize_rows_by_node
 
 
 class TrainConfig:
     # def __init__(self, samples_per_run=256, num_runs=1000, batch_size=32, learning_rate=3e-3, fourier=True,
-    def __init__(self, samples_per_run=256, num_runs=100, batch_size=32, learning_rate=1e-3, fourier=True,
+    def __init__(self, samples_per_run=256, num_runs=10, batch_size=32, learning_rate=1e-3, fourier=True,
                  coarsen=False, checkpoint_dir='../train_checkpoints', tensorboard_dir='../tensorboard_dir', load_model=False):
         self.samples_per_run = samples_per_run
         self.num_runs = num_runs
@@ -111,13 +109,15 @@ GRAPH_LAPLACIAN_ROOTNODE_TEST.test_config.splitting = 'rootnode'
 GRAPH_LAPLACIAN_TRAIN = Config()
 GRAPH_LAPLACIAN_TRAIN.data_config.dist = 'lognormal_laplacian_periodic'
 
+
 ## New config for creating the data used to train
 GRAPH_LAPLACIAN_TRAIN_CREATE_DATA = Config()
 GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.data_config.dist = 'lognormal_laplacian_periodic'
 GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.data_config.load_data = False
 GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.data_config.save_data = True
-GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.data_config.block_periodic = False
-GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.train_config.fourier = False
+GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.data_config.block_periodic = True
+GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.train_config.fourier = True
+
 
 GRAPH_LAPLACIAN_ABLATION_MP2 = Config()
 GRAPH_LAPLACIAN_ABLATION_MP2.data_config.dist = 'lognormal_laplacian_periodic'
@@ -133,8 +133,6 @@ GRAPH_LAPLACIAN_ABLATION_NO_CONCAT.model_config.concat_encoder = False
 
 GRAPH_LAPLACIAN_ABLATION_NO_INDICATORS = Config()
 GRAPH_LAPLACIAN_ABLATION_NO_INDICATORS.data_config.dist = 'lognormal_laplacian_periodic'
-GRAPH_LAPLACIAN_ABLATION_NO_INDICATORS.run_config.node_indicators = False
-GRAPH_LAPLACIAN_ABLATION_NO_INDICATORS.run_config.edge_indicators = False
 
 GRAPH_LAPLACIAN_EVAL = Config()
 GRAPH_LAPLACIAN_EVAL.data_config.block_periodic = False

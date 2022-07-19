@@ -227,7 +227,8 @@ def block_diagonalize_P(P, root_num_blocks, coarse_nodes):
     blocks = blocks[1:]  # ignore zero mode block
 
     block_coarse_nodes = coarse_nodes[:len(coarse_nodes) // root_num_blocks**2]
-    print("BLOCK COARSE NODES", block_coarse_nodes)
+    
+    # print("BLOCK COARSE NODES", block_coarse_nodes)
     # assert 1==2, "NO"
 
     ##<<<----------------- Ugly trick in case the first nodes are not coarse: FIX THIS
