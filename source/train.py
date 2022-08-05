@@ -138,7 +138,7 @@ def loss(dataset, A_graphs_dgl, P_graphs_dgl,
             Rs = torch.conj(torch.transpose(Ps, dim0=1, dim1=2))
             Ss = torch.as_tensor(block_Ss[num_blocks * i:num_blocks * (i + 1)], device=As.device, dtype=As.dtype)
 
-            print("Number of Ps NaNs", torch.nonzero(torch.isnan(Rs)))
+            # print("Number of Ps NaNs", torch.nonzero(torch.isnan(Rs)))
 
             Ms = two_grid_error_matrices(As, Ps, Rs, Ss)
             M = Ms[-1]  # for logging
@@ -211,19 +211,19 @@ def train_run(run_dataset, run, batch_size, config,
 
         batch_dataloader = GraphDataLoader(batch_A_dgl_dataset_gpu, batch_size=batch_size)       ## Only 1 batch can be made
         batch_P_dgl_dataset = model(next(iter(batch_dataloader)))
-        print("DOC:", batch_P_dgl_dataset.edata['P'])
-        print("Number of Graph NaNs", torch.nonzero(torch.isnan(batch_P_dgl_dataset.edata['P'].view(-1))))
+        # print("DOC:", batch_P_dgl_dataset.edata['P'])
+        # print("Number of Graph NaNs", torch.nonzero(torch.isnan(batch_P_dgl_dataset.edata['P'].view(-1))))
 
-        frob_loss, M = loss(batch_dataset, batch_A_dgl_dataset_gpu, batch_P_dgl_dataset,
+        total_loss, M = loss(batch_dataset, batch_A_dgl_dataset_gpu, batch_P_dgl_dataset,
                             config.run_config, config.train_config, config.data_config)
 
-        print(f"frob loss: {frob_loss.item()}")
+        print(f"total_loss: {total_loss.item()}")
         save_every = max(1000 // batch_size, 1)
         if batch % save_every == 0:
             save_model_and_optimizer(checkpoint_prefix, model, optimizer, int(batch))      ## <------ Find a better way to get the global_step (the number count for the batches)
 
         optimizer.zero_grad()
-        frob_loss.backward()
+        total_loss.backward()
         optimizer.step()
 
         nb_iter_batch[0] += 1
@@ -231,7 +231,7 @@ def train_run(run_dataset, run, batch_size, config,
         variables = model.named_parameters()
 
         if tb_writer is not None:
-            record_tb(M, run, num_As, batch, batch_size, frob_loss.item(), loop, model,
+            record_tb(M, run, num_As, batch, batch_size, total_loss.item(), loop, model,
                   variables, eval_dataset, eval_A_graphs_tuple, eval_config, nb_iter_batch[0], tb_writer)
 
 
@@ -272,10 +272,10 @@ def record_tb_params(batch_size, loop, variables, iter_nb, tb_writer):
             # variable = torch.nan_to_num(variable, nan=0.0, posinf=0.0, neginf=0.0)      ## Delete this !
 
             tb_writer.add_scalar(variable_name + '_grad', torch.norm(grad) / batch_size, iter_nb)
-            tb_writer.add_histogram(variable_name + '_grad_histogram', grad / batch_size, iter_nb)
+            # tb_writer.add_histogram(variable_name + '_grad_histogram', grad / batch_size, iter_nb)
             tb_writer.add_scalar(variable_name + '_grad_fraction_dead', torch.count_nonzero(grad)/torch.numel(grad), iter_nb)
             tb_writer.add_scalar(variable_name + '_value', torch.norm(variable), iter_nb)
-            tb_writer.add_histogram(variable_name + '_value_histogram', variable, iter_nb)
+            # tb_writer.add_histogram(variable_name + '_value_histogram', variable, iter_nb)
 
 
 def record_tb_spectral_radius(M, model, eval_dataset, eval_A_dgl, eval_config, iter_nb, tb_writer):
