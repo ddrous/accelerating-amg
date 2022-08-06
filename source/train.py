@@ -21,7 +21,7 @@ from data import generate_A
 from dataset import DataSet
 from model import AMGModel, dgl_graph_to_sparse_matrices, to_prolongation_matrix_tensor, AMGDataset
 from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
-    two_grid_error_matrix, compute_coarse_A, P_square_sparsity_pattern, P_square_sparsity_pattern_torch, normalized_loss
+    two_grid_error_matrix, compute_coarse_A, P_square_sparsity_pattern, normalized_loss
 from relaxation import relaxation_matrices
 from utils import create_dir, create_results_dir, write_config_file, most_frequent_splitting, chunks, make_save_path
 
@@ -99,15 +99,13 @@ def create_dataset_from_As(As, data_config, matlab_engine=None):
 
     spasity_patterns_list = []
     for A, coarse_nodes, baseline_P in zip(As, coarse_nodes_list, baseline_P_list):
-        pattern = P_square_sparsity_pattern(baseline_P, baseline_P.shape[0],
-                                                        coarse_nodes, matlab_engine)
+        pattern = P_square_sparsity_pattern(baseline_P, coarse_nodes)
         spasity_patterns_list.append(pattern)
 
     return DataSet(As, Ss, coarse_nodes_list, baseline_P_list, spasity_patterns_list)
 
 
-def loss(dataset, A_graphs_dgl, P_graphs_dgl,
-                                    run_config, train_config, data_config):
+def loss(dataset, P_graphs_dgl, run_config, train_config, data_config):
 
     As = dataset.As
     Ps_square, nodes_list = dgl_graph_to_sparse_matrices(P_graphs_dgl, val_feature='P', return_nodes=True)
@@ -190,7 +188,7 @@ def save_model_and_optimizer(checkpoint_prefix, model, optimizer, global_step):
 def train_run(run_dataset, run, batch_size, config,
               model, optimizer, checkpoint_prefix,
               eval_dataset, eval_A_graphs_tuple, eval_config, 
-              matlab_engine=None, device="cpu", nb_iter_batch=[None], tb_writer=None):
+              device="cpu", nb_iter_batch=[None], tb_writer=None):
     num_As = len(run_dataset.As)
     if num_As % batch_size != 0:
         raise RuntimeError("batch size must divide training data size")
@@ -214,7 +212,7 @@ def train_run(run_dataset, run, batch_size, config,
         # print("DOC:", batch_P_dgl_dataset.edata['P'])
         # print("Number of Graph NaNs", torch.nonzero(torch.isnan(batch_P_dgl_dataset.edata['P'].view(-1))))
 
-        total_loss, M = loss(batch_dataset, batch_A_dgl_dataset_gpu, batch_P_dgl_dataset,
+        total_loss, M = loss(batch_dataset, batch_P_dgl_dataset,
                             config.run_config, config.train_config, config.data_config)
 
         print(f"total_loss: {total_loss.item()}")
@@ -290,8 +288,7 @@ def record_tb_spectral_radius(M, model, eval_dataset, eval_A_dgl, eval_config, i
 
     # print("COARSE As", eval_P_dgl_dataset)
 
-    eval_loss, eval_M = loss(eval_dataset, eval_A_dgl, 
-                                eval_P_dgl_dataset,
+    eval_loss, eval_M = loss(eval_dataset, eval_P_dgl_dataset,
                                 eval_config.run_config,
                                 eval_config.train_config,
                                 eval_config.data_config)
@@ -320,16 +317,9 @@ def coarsen_As(fine_dataset, model, run_config, matlab_engine, batch_size=64):
 
     spasity_patterns_list = []
     for A, coarse_nodes, baseline_P in zip(As, coarse_nodes_list, baseline_P_list):
-        print("\nEngine 1:", matlab_engine)
-        pattern = P_square_sparsity_pattern(baseline_P, baseline_P.shape[0], coarse_nodes, matlab_engine)
+        pattern = P_square_sparsity_pattern(baseline_P, coarse_nodes)
         spasity_patterns_list.append(pattern)
 
-        new_pattern = P_square_sparsity_pattern_torch(baseline_P, coarse_nodes)
-
-        print("Pattern 1:", pattern)
-        print("Pattern 2:", new_pattern)
-
-        assert 1==2, "STOP INSPECT"
     batched_spasity_patterns_list = list(chunks(spasity_patterns_list, batch_size))
 
     save_path = make_save_path("coarsened_batch_garlekin_As", len(batched_As), 4, 4)    
@@ -372,12 +362,12 @@ def create_coarse_dataset(fine_dataset, model, data_config, run_config, matlab_e
     return create_dataset_from_As(As, data_config)
 
 
-def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACIAN_EVAL', seed=3):
+def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='FINITE_ELEMENT_TEST', seed=3):
     config = getattr(configs, config)
     # config = getattr(configs, 'GRAPH_LAPLACIAN_TRAIN')        ## Use this to avoid recreating the dataset all the time
-    eval_config = getattr(configs, 'GRAPH_LAPLACIAN_TRAIN_CREATE_DATA')
+    eval_config = getattr(configs, eval_config)
     # eval_config = getattr(configs, eval_config)
-    eval_config.run_config = config.run_config
+    # eval_config.run_config = config.run_config
 
     ##-------------->> ACCELERATION CHOICES <<-----------------
     matlab_engine = matlab.engine.start_matlab()
@@ -436,7 +426,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACI
                                model, optimizer,
                                checkpoint_prefix,
                                eval_dataset, eval_dataset_dgl, eval_config,
-                               matlab_engine, device, nb_iter_batch, writer)
+                               device, nb_iter_batch, writer)
 
     if config.train_config.coarsen:
         old_model = copy.deepcopy(model)
@@ -464,7 +454,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACI
                                    model, optimizer,
                                    checkpoint_prefix,
                                    eval_dataset, eval_dataset_dgl, eval_config,
-                                   matlab_engine, device, writer)
+                                   device, nb_iter_batch, writer)
 
 
 if __name__ == '__main__':
@@ -474,30 +464,3 @@ if __name__ == '__main__':
     np.set_printoptions(precision=2)
 
     fire.Fire(train)
-
-
-    # matlab_engine = matlab.engine.start_matlab()
-    # # matlab_engine = None
-    # config = configs.GRAPH_LAPLACIAN_TRAIN_CREATE_DATA
-
-    # data_config = config.data_config
-    # num_As = 2
-
-    # As = [generate_A(data_config.num_unknowns,
-    #                     data_config.dist,
-    #                     data_config.block_periodic,
-    #                     data_config.root_num_blocks,
-    #                     add_diag=data_config.add_diag,
-    #                     matlab_engine=matlab_engine) for _ in range(num_As)]
-
-    # view=10
-    # print()
-    # # print(As[0].toarray()[:view,:view])
-    # B= np.load('../data/periodic_delaunay_num_As_2_num_points_4_rnb_4_epoch_0.npy', allow_pickle=True)
-    # # print(B[1].toarray()[:view,:view])
-
-    # dataset = create_dataset(num_As, data_config, run=0, matlab_engine=matlab_engine)
-    # # toprint = dataset.As[0].todense()[:view, :view].view()
-    # toprint = dataset.baseline_P_list[0]
-    # # print(toprint)
-

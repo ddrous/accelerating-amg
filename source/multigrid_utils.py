@@ -32,46 +32,16 @@ def normalized_loss(A):
     # return torch.linalg.norm(A, ord='fro')
 
 
-def P_square_sparsity_pattern(P, size, coarse_nodes, matlab_engine):
+def P_square_sparsity_pattern(P, coarse_nodes):
     """
     Computes the sparsity pattern of a prolongation matrix P 
     """
-    P_coo = P.tocoo()
-    P_rows = matlab.double((P_coo.row + 1).tolist())
-    P_cols = matlab.double((P_coo.col + 1).tolist())
-    P_values = matlab.double(P_coo.data.tolist())
-    coarse_nodes = matlab.double((coarse_nodes + 1).tolist())
-    rows, cols = matlab_engine.square_P(P_rows, P_cols, P_values, size, coarse_nodes, nargout=2)
-    rows = np.array(rows._data).reshape(rows.size, order='F') - 1
-    cols = np.array(cols._data).reshape(cols.size, order='F') - 1
-    rows, cols = rows.T[0], cols.T[0]
-    return rows, cols
+    cols = P.tocoo().col
+    square_cols = np.array([coarse_nodes[col] for col in cols])
+    square_rows = np.array(P.tocoo().row)
 
+    return square_rows, square_cols
 
-def P_square_sparsity_pattern_torch(P, coarse_nodes):
-    """
-    Computes the sparsity pattern of a prolongation matrix P 
-    """
-    num_rows = P.shape[0]
-
-    P_square = torch.zeros(num_rows, num_rows)
-    P_square[:, coarse_nodes] = P
-
-    [rows, cols] = P_square.nonzero(P_square, as_tuple=True)
-
-    # new_diag = torch.ones(num_rows, device=device, dtype=dtype)
-    # full_matrix[range(num_rows), range(num_rows)] = new_diag
-    
-    # # Select only columns corresponding to coarse nodes
-    # matrix = full_matrix[:, coarse_nodes]
-
-    # # Set sparsity pattern (interpolatory sets) to be of baseline prolongation
-    # baseline_P = torch.as_tensor(baseline_P.todense(), device=device, dtype=dtype)
-    # baseline_zero_mask = torch.as_tensor(torch.not_equal(baseline_P, torch.zeros_like(baseline_P)), 
-    #                                         device=device, dtype=dtype)
-    # matrix = matrix * baseline_zero_mask
-
-    return rows, cols
 
 def compute_coarse_A(R, A, P):
     return R @ A @ P

@@ -1,8 +1,7 @@
 class DataConfig:
-    def __init__(self, dist='lognormal_laplacian_periodic', block_periodic=True,
-                #  num_unknowns=8 ** 2, root_num_blocks=4, splitting='CLJP', add_diag=False,
+    def __init__(self, dist='lognormal_laplacian_periodic', block_periodic=False,
                  num_unknowns=8 ** 2, root_num_blocks=4, splitting='CLJP', add_diag=False,
-                 load_data=True, save_data=False, dtype='single'):
+                 load_data=False, save_data=True, dtype='single'):
         self.dist = dist  # see function 'generate_A()' for possible distributions
         self.block_periodic = block_periodic
         self.num_unknowns = num_unknowns
@@ -31,9 +30,8 @@ class RunConfig:
 
 
 class TrainConfig:
-    # def __init__(self, samples_per_run=256, num_runs=1000, batch_size=32, learning_rate=3e-3, fourier=True,
-    def __init__(self, samples_per_run=256, num_runs=2, batch_size=32, learning_rate=1e-3, fourier=True,
-                 coarsen=False, checkpoint_dir='../train_checkpoints', tensorboard_dir='../tensorboard_dir', load_model=False):
+    def __init__(self, samples_per_run=256, num_runs=100, batch_size=32, learning_rate=1e-3, fourier=True,
+                 coarsen=True, checkpoint_dir='../train_checkpoints', tensorboard_dir='../tensorboard_dir', load_model=False):
         self.samples_per_run = samples_per_run
         self.num_runs = num_runs
         self.batch_size = batch_size
@@ -110,14 +108,8 @@ GRAPH_LAPLACIAN_TRAIN = Config()
 GRAPH_LAPLACIAN_TRAIN.data_config.dist = 'lognormal_laplacian_periodic'
 
 
-## New config for creating the data used to train
-GRAPH_LAPLACIAN_TRAIN_CREATE_DATA = Config()
-GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.data_config.dist = 'lognormal_laplacian_periodic'
-GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.data_config.load_data = False
-GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.data_config.save_data = True
-GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.data_config.block_periodic = False
-GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.train_config.fourier = False
-GRAPH_LAPLACIAN_TRAIN_CREATE_DATA.train_config.coarsen = True
+FINITE_ELEMENT_TEST = Config()
+FINITE_ELEMENT_TEST.data_config.dist = 'finite_element'
 
 
 GRAPH_LAPLACIAN_ABLATION_MP2 = Config()
@@ -164,9 +156,6 @@ GRAPH_LAPLACIAN_UNIFORM_TEST = Config()
 GRAPH_LAPLACIAN_UNIFORM_TEST.data_config.block_periodic = False
 GRAPH_LAPLACIAN_UNIFORM_TEST.data_config.dist = 'uniform_laplacian'
 
-FINITE_ELEMENT_TEST = Config()
-FINITE_ELEMENT_TEST.data_config.block_periodic = False
-FINITE_ELEMENT_TEST.data_config.dist = 'finite_element'
 
 # should replicate results from "Compatible Relaxation and Coarsening in Algebraic Multigrid" (2009)
 CR_TEST = Config()
