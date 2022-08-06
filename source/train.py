@@ -187,7 +187,7 @@ def save_model_and_optimizer(checkpoint_prefix, model, optimizer, global_step):
 
 def train_run(run_dataset, run, batch_size, config,
               model, optimizer, checkpoint_prefix,
-              eval_dataset, eval_A_graphs_tuple, eval_config, 
+              eval_dataset, eval_A_dgl, eval_config, 
               device="cpu", nb_iter_batch=[None], tb_writer=None):
     num_As = len(run_dataset.As)
     if num_As % batch_size != 0:
@@ -230,7 +230,7 @@ def train_run(run_dataset, run, batch_size, config,
 
         if tb_writer is not None:
             record_tb(M, run, num_As, batch, batch_size, total_loss.item(), loop, model,
-                  variables, eval_dataset, eval_A_graphs_tuple, eval_config, nb_iter_batch[0], tb_writer)
+                  variables, eval_dataset, eval_A_dgl, eval_config, nb_iter_batch[0], tb_writer)
 
 
 def record_tb(M, run, num_As, batch, batch_size, frob_loss, loop, model,
@@ -286,8 +286,6 @@ def record_tb_spectral_radius(M, model, eval_dataset, eval_A_dgl, eval_config, i
     eval_dataloader = GraphDataLoader(eval_A_dgl, batch_size=len(eval_A_dgl))
     eval_P_dgl_dataset = model(next(iter(eval_dataloader)))
 
-    # print("COARSE As", eval_P_dgl_dataset)
-
     eval_loss, eval_M = loss(eval_dataset, eval_P_dgl_dataset,
                                 eval_config.run_config,
                                 eval_config.train_config,
@@ -299,7 +297,7 @@ def record_tb_spectral_radius(M, model, eval_dataset, eval_A_dgl, eval_config, i
     tb_writer.add_scalar('eval_spectral_radius', eval_spectral_radius, iter_nb)
 
 
-def coarsen_As(fine_dataset, model, run_config, matlab_engine, batch_size=64):
+def coarsen_As(fine_dataset, model, batch_size=64):
     # computes the Galerkin operator P^(T)AP on each of the A matrices in a batch, using the Prolongation
     # outputted from the model
     As = fine_dataset.As
@@ -358,7 +356,7 @@ def coarsen_As(fine_dataset, model, run_config, matlab_engine, batch_size=64):
 
 
 def create_coarse_dataset(fine_dataset, model, data_config, run_config, matlab_engine):
-    As = coarsen_As(fine_dataset, model, run_config, matlab_engine)
+    As = coarsen_As(fine_dataset, model)
     return create_dataset_from_As(As, data_config)
 
 
@@ -382,7 +380,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='FINITE_ELEMENT_TEST', see
 
     # we measure the performance of the model over time on one larger instance that is not optimized for
     # eval_dataset = create_dataset(1, eval_config.data_config)
-    eval_dataset = create_dataset(10, config.data_config, run=0, matlab_engine=matlab_engine)
+    eval_dataset = create_dataset(1280, config.data_config, run=0, matlab_engine=matlab_engine)
 
     save_path = make_save_path(eval_config.data_config.dist, len(eval_dataset.As), 
                                     eval_config.data_config.num_unknowns,

@@ -23,14 +23,13 @@ class ModelConfig:
 
 
 class RunConfig:
-    # def __init__(self, node_indicators=True, edge_indicators=True, normalize_rows=True, normalize_rows_by_node=False):
     def __init__(self, normalize_rows=True, normalize_rows_by_node=False):
         self.normalize_rows = normalize_rows
         self.normalize_rows_by_node = normalize_rows_by_node
 
 
 class TrainConfig:
-    def __init__(self, samples_per_run=256, num_runs=100, batch_size=32, learning_rate=1e-3, fourier=True,
+    def __init__(self, samples_per_run=256, num_runs=1, batch_size=32, learning_rate=1e-3, fourier=False,
                  coarsen=True, checkpoint_dir='../train_checkpoints', tensorboard_dir='../tensorboard_dir', load_model=False):
         self.samples_per_run = samples_per_run
         self.num_runs = num_runs
