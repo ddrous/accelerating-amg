@@ -21,7 +21,7 @@ from data import generate_A
 from dataset import DataSet
 from model import AMGModel, dgl_graph_to_sparse_matrices, to_prolongation_matrix_tensor, AMGDataset
 from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
-    two_grid_error_matrix, compute_coarse_A, P_square_sparsity_pattern, normalized_loss
+    two_grid_error_matrix, compute_coarse_A, P_square_sparsity_pattern, P_square_sparsity_pattern_torch, normalized_loss
 from relaxation import relaxation_matrices
 from utils import create_dir, create_results_dir, write_config_file, most_frequent_splitting, chunks, make_save_path
 
@@ -306,6 +306,7 @@ def coarsen_As(fine_dataset, model, run_config, matlab_engine, batch_size=64):
     # computes the Galerkin operator P^(T)AP on each of the A matrices in a batch, using the Prolongation
     # outputted from the model
     As = fine_dataset.As
+    device = next(model.parameters()).device
     coarse_nodes_list = fine_dataset.coarse_nodes_list
     baseline_P_list = fine_dataset.baseline_P_list
 
@@ -317,16 +318,19 @@ def coarsen_As(fine_dataset, model, run_config, matlab_engine, batch_size=64):
     batched_coarse_nodes_list = list(chunks(coarse_nodes_list, batch_size))
     batched_baseline_P_list = list(chunks(baseline_P_list, batch_size))
 
-    batched_spasity_patterns_list = []
-    for A, coarse_nodes, baseline_P in zip(batched_As, batched_coarse_nodes_list, batched_baseline_P_list):
-        pattern = P_square_sparsity_pattern(baseline_P, baseline_P.shape[0],
-                                                        coarse_nodes, matlab_engine)
-        batched_spasity_patterns_list.append(pattern)
+    spasity_patterns_list = []
+    for A, coarse_nodes, baseline_P in zip(As, coarse_nodes_list, baseline_P_list):
+        print("\nEngine 1:", matlab_engine)
+        pattern = P_square_sparsity_pattern(baseline_P, baseline_P.shape[0], coarse_nodes, matlab_engine)
+        spasity_patterns_list.append(pattern)
 
-    bactched_coarse_dataset = DataSet(batched_As, batched_Ss, 
-                                        batched_coarse_nodes_list, 
-                                        batched_baseline_P_list, 
-                                        batched_spasity_patterns_list)
+        new_pattern = P_square_sparsity_pattern_torch(baseline_P, coarse_nodes)
+
+        print("Pattern 1:", pattern)
+        print("Pattern 2:", new_pattern)
+
+        assert 1==2, "STOP INSPECT"
+    batched_spasity_patterns_list = list(chunks(spasity_patterns_list, batch_size))
 
     save_path = make_save_path("coarsened_batch_garlekin_As", len(batched_As), 4, 4)    
     A_graphs_dgl_batches = [AMGDataset(DataSet(batch_As, batch_Ss, 
@@ -339,8 +343,9 @@ def coarsen_As(fine_dataset, model, run_config, matlab_engine, batch_size=64):
     Ps_square = []
     nodes_list = []
     for batch in tqdm(range(num_batches)):
-        A_graphs_dgl = A_graphs_dgl_batches[batch]
-        P_graphs_dgl = model(A_graphs_dgl)
+        A_graphs_dgl = A_graphs_dgl_batches[batch].to(device)
+        batch_dataloader = GraphDataLoader(A_graphs_dgl, batch_size=batch_size)
+        P_graphs_dgl = model(next(iter(batch_dataloader)))
         P_square_batch, nodes_batch = dgl_graph_to_sparse_matrices(P_graphs_dgl, val_feature='P', return_nodes=True)
         Ps_square.extend(P_square_batch)
         nodes_list.extend(nodes_batch)
@@ -352,11 +357,11 @@ def coarsen_As(fine_dataset, model, run_config, matlab_engine, batch_size=64):
         coarse_nodes = coarse_nodes_list[i]
         baseline_P = baseline_P_list[i]
         P, _ = to_prolongation_matrix_tensor(P_square, coarse_nodes, baseline_P, nodes)
-        R = torch.transpose(P)
+        R = torch.transpose(P, dim0=-2, dim1=-1)
         A_csr = As[i]
-        A = torch.as_tensor(A_csr.toarray(), dtype=torch.float64)
+        A = torch.as_tensor(A_csr.toarray(), dtype=torch.float32, device=device)
         tensor_coarse_A = compute_coarse_A(R, A, P)
-        coarse_A = csr_matrix(tensor_coarse_A.numpy())
+        coarse_A = csr_matrix(tensor_coarse_A.cpu().detach().numpy())
         coarse_As.append(coarse_A)
 
     return coarse_As
@@ -387,7 +392,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN_CREATE_DATA', eval_config='GRAPH_LAPLACI
 
     # we measure the performance of the model over time on one larger instance that is not optimized for
     # eval_dataset = create_dataset(1, eval_config.data_config)
-    eval_dataset = create_dataset(2, config.data_config, run=0, matlab_engine=matlab_engine)
+    eval_dataset = create_dataset(10, config.data_config, run=0, matlab_engine=matlab_engine)
 
     save_path = make_save_path(eval_config.data_config.dist, len(eval_dataset.As), 
                                     eval_config.data_config.num_unknowns,
