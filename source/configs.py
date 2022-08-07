@@ -29,7 +29,7 @@ class RunConfig:
 
 
 class TrainConfig:
-    def __init__(self, samples_per_run=256, num_runs=1, batch_size=32, learning_rate=1e-3, fourier=False,
+    def __init__(self, samples_per_run=256, num_runs=10, batch_size=32, learning_rate=1e-3, fourier=False,
                  coarsen=True, checkpoint_dir='../train_checkpoints', tensorboard_dir='../tensorboard_dir', load_model=False):
         self.samples_per_run = samples_per_run
         self.num_runs = num_runs
@@ -45,7 +45,7 @@ class TrainConfig:
 class TestConfig:
     def __init__(self, dist='lognormal_laplacian_periodic', splitting='CLJP',
                  test_sizes=(1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072),
-                 load_data=True, num_runs=100, cycle='W',
+                 load_data=False, num_runs=100, cycle='W',
                  max_levels=12, iterations=81, fp_threshold=1e-10, strength=('classical', {'theta': 0.25}),
                  presmoother=('gauss_seidel', {'sweep': 'forward', 'iterations': 1}),
                  postsmoother=('gauss_seidel', {'sweep': 'forward', 'iterations': 1}),
@@ -109,7 +109,7 @@ GRAPH_LAPLACIAN_TRAIN.data_config.dist = 'lognormal_laplacian_periodic'
 
 FINITE_ELEMENT_TEST = Config()
 FINITE_ELEMENT_TEST.data_config.dist = 'finite_element'
-
+FINITE_ELEMENT_TEST.test_config.test_sizes = (2048, 2048)
 
 GRAPH_LAPLACIAN_ABLATION_MP2 = Config()
 GRAPH_LAPLACIAN_ABLATION_MP2.data_config.dist = 'lognormal_laplacian_periodic'

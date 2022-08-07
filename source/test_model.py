@@ -2,9 +2,10 @@ import json
 from functools import partial
 
 import fire
-import matlab.engine
 import numpy as np
 from tqdm import tqdm
+
+import torch
 
 import configs
 from data import generate_A
@@ -13,10 +14,9 @@ from prolongation_functions import model, baseline
 from ruge_stuben_custom_solver import ruge_stuben_custom_solver
 
 
-def test_size(model_name, graph_model, size, test_config, run_config, matlab_engine):
+def test_size(model_name, graph_model, size, test_config, run_config):
     model_prolongation = partial(model, graph_model=graph_model,
-                                 normalize_rows_by_node=run_config.normalize_rows_by_node,
-                                 matlab_engine=matlab_engine)
+                                 normalize_rows_by_node=run_config.normalize_rows_by_node)
     baseline_prolongation = baseline
 
     model_errors_div_diff = []
@@ -41,9 +41,9 @@ def test_size(model_name, graph_model, size, test_config, run_config, matlab_eng
 
     if load_data:
         if dist == 'lognormal_laplacian_periodic':
-            As = np.load(f"test_data_dir/delaunay_periodic_logn_num_As_{100}_num_points_{size}.npy")
+            As = np.load(f"../data/delaunay_periodic_logn_num_As_{100}_num_points_{size}.npy")
         elif dist == 'lognormal_complex_fem':
-            As = np.load(f"test_data_dir/fe_hole_logn_num_As_{100}_num_points_{size}.npy")
+            As = np.load(f"../data/fe_hole_logn_num_As_{100}_num_points_{size}.npy")
         else:
             raise NotImplementedError()
 
@@ -53,6 +53,10 @@ def test_size(model_name, graph_model, size, test_config, run_config, matlab_eng
         else:
             A = generate_A(size, dist, block_periodic, root_num_blocks)
 
+        # test = np.isnan(A.toarray())
+        # res = np.any(test)
+        # print("Should be false:", res)
+
         num_unknowns = A.shape[0]
         x0 = np.random.normal(loc=0.0, scale=1.0, size=num_unknowns)
         b = np.zeros((A.shape[0]))
@@ -60,6 +64,7 @@ def test_size(model_name, graph_model, size, test_config, run_config, matlab_eng
         model_residuals = []
         baseline_residuals = []
 
+        # A = np.nan_to_num(A, nan=0.0, posinf=0.0, neginf=0.0)
         model_solver = ruge_stuben_custom_solver(A, model_prolongation,
                                                  strength=strength,
                                                  presmoother=presmoother,
@@ -102,7 +107,7 @@ def test_size(model_name, graph_model, size, test_config, run_config, matlab_eng
     else:
         splitting_str = splitting
     results_file = open(
-        f"results/{model_name}/{dist}_{num_unknowns}_cycle_{cycle}_max_levels_{max_levels}_split_{splitting_str}_results.txt",
+        f"../results/{model_name}/{dist}_{num_unknowns}_cycle_{cycle}_max_levels_{max_levels}_split_{splitting_str}_results.txt",
         'w')
     print(f"cycle: {cycle}, max levels: {max_levels}", file=results_file)
     print(f"asymptotic error factor model: {model_errors_div_diff_mean:.4f} ± {model_errors_div_diff_std:.5f}",
@@ -122,35 +127,28 @@ def test_size(model_name, graph_model, size, test_config, run_config, matlab_eng
     results_file.close()
 
 
-def test_model(model_name=None, test_config='GRAPH_LAPLACIAN_TEST', seed=1):
+def test_model(model_name=None, test_config='FINITE_ELEMENT_TEST', seed=1):
     if model_name is None:
         raise RuntimeError("model name required")
     model_name = str(model_name)
-    matlab_engine = matlab.engine.start_matlab()
 
     # fix random seeds for reproducibility
     np.random.seed(seed)
-    tf.random.set_seed(seed)
-    matlab_engine.eval(f'rng({seed})')
+    torch.manual_seed(seed)
 
     test_config = getattr(configs, test_config).test_config
-    config_file = f"results/{model_name}/config.json"
+    config_file = f"../results/{model_name}/config.json"
     with open(config_file) as f:
         data = json.load(f)
         model_config = configs.ModelConfig(**data['model_config'])
         run_config = configs.RunConfig(**data['run_config'])
+        train_config = configs.TrainConfig(**data['train_config'])
 
-    model = get_model(model_name, model_config, run_config, matlab_engine)
+    model = get_model(model_name, model_config, train=False, train_config=train_config)
 
     for size in test_config.test_sizes:
-        test_size(model_name, model, size, test_config, run_config,
-                  matlab_engine)
+        test_size(model_name, model, size, test_config, run_config)
 
 
 if __name__ == '__main__':
-    config = tf.compat.v1.ConfigProto()
-    config.gpu_options.allow_growth = True
-    # tf.enable_eager_execution(config=config)   ## Not needed for tensorflow 2
-    tf.compat.v1.enable_eager_execution(config=config)
-
     fire.Fire(test_model)

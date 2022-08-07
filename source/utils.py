@@ -29,10 +29,10 @@ def create_dir(path):
 def create_results_dir(run_name):
     results_dir = '../results/' + run_name
     create_dir(results_dir)
-    # make a copy of all Python files, for reproducibility
-    local_dir = os.path.dirname(__file__)
-    for py_file in glob.glob(local_dir + '/*.py'):
-        shutil.copy(py_file, results_dir)
+    ## make a copy of all Python files, for reproducibility
+    # local_dir = os.path.dirname(__file__)
+    # for py_file in glob.glob(local_dir + '/*.py'):
+    #     shutil.copy(py_file, results_dir)
 
 
 def write_config_file(run_name, config, seed):

@@ -6,55 +6,42 @@ import dgl.nn as dglnn
 from dgl.data import DGLDataset
 from dgl.data.utils import save_graphs, load_graphs
 import matlab
+import os
 import numpy as np
 from scipy.sparse import csr_matrix
 
 from data import As_poisson_grid
-# from graph_net_model import EncodeProcessDecodeNonRecurrent
 
 
-def get_model(model_name, model_config, run_config, matlab_engine, train=False, train_config=None):
-    dummy_input = As_poisson_grid(1, 7 ** 2)[0]
-    checkpoint_dir = './training_dir/' + model_name
-    graph_model, optimizer, global_step = load_model(checkpoint_dir, dummy_input, model_config,
-                                                     run_config,
-                                                     matlab_engine, get_optimizer=train,
-                                                     train_config=train_config)
+def get_model(model_name, model_config, train=False, train_config=None):
+    checkpoint_dir = '../train_checkpoints/' + model_name
+    if not os.path.isdir(checkpoint_dir):
+        raise RuntimeError(f'training_dir {checkpoint_dir} does not exist')
+
+    graph_model, optimizer, global_step = load_model(checkpoint_dir, model_config,
+                                                     train_config)
+
     if train:
         return graph_model, optimizer, global_step
     else:
+        graph_model.eval()      ## Eval mode
         return graph_model
 
 
-def load_model(checkpoint_dir, dummy_input, model_config, run_config, matlab_engine, get_optimizer=True,
-               train_config=None):
-    tf.compat.v1.enable_eager_execution()
-    model = create_model(model_config)
+def load_model(checkpoint_dir, model_config, train_config):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    # we have to use the model at least once to get the list of variables
-    model(csrs_to_graphs_tuple([dummy_input], matlab_engine, coarse_nodes_list=np.array([[0, 1]]),
-                               baseline_P_list=[tf.convert_to_tensor(dummy_input.toarray()[:, [0, 1]])],
-                               node_indicators=run_config.node_indicators,
-                               edge_indicators=run_config.edge_indicators))
+    checkpoint = torch.load(checkpoint_dir + '/ckpt')
 
-    variables = model.get_all_variables()
-    variables_dict = {variable.name: variable for variable in variables}
-    if get_optimizer:
-        global_step = tf.train.get_or_create_global_step()
-        decay_steps = 100
-        decay_rate = 1.0
-        learning_rate = tf.train.exponential_decay(train_config.learning_rate, global_step, decay_steps, decay_rate)
-        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+    model = AMGModel(model_config)
+    model = model.to(device)
+    model.load_state_dict(checkpoint['model_state_dict'])
 
-        checkpoint = tf.train.Checkpoint(**variables_dict, optimizer=optimizer, global_step=global_step)
-    else:
-        optimizer = None
-        global_step = None
-        checkpoint = tf.train.Checkpoint(**variables_dict)
-    latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
-    if latest_checkpoint is None:
-        raise RuntimeError(f'training_dir {checkpoint_dir} does not exist')
-    checkpoint.restore(latest_checkpoint)
+    optimizer = torch.optim.Adam(model.parameters(), lr=train_config.learning_rate)
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+    global_step = checkpoint['epoch']
+
     return model, optimizer, global_step
 
 
@@ -218,7 +205,7 @@ class AMGModel(nn.Module):
 def to_prolongation_matrix_csr(matrix, coarse_nodes, baseline_P, nodes, normalize_rows=True,
                                normalize_rows_by_node=False):
     """
-    sparse version of the above function, for when the dense matrix is too large to fit in GPU memory
+    sparse version of the below function, for when the dense matrix is too large to fit in GPU memory
     used only for inference, so no need for backpropagation, inputs are csr matrices
     """
     # prolongation from coarse point to itself should be identity. This corresponds to 1's on the diagonal

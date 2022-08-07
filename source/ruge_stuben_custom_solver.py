@@ -1,7 +1,6 @@
 """Classical AMG (Ruge-Stuben AMG)."""
 from __future__ import absolute_import
 
-import math
 from warnings import warn
 from scipy.sparse import csr_matrix, isspmatrix_csr, SparseEfficiencyWarning
 
@@ -179,6 +178,7 @@ def extend_hierarchy(levels, strength, CF, keep, prolongation_function):
 
     # Create a prolongation matrix with the same coarse-fine splitting and sparsity pattern
     # as the baseline
+
     P = prolongation_function(A, coarse_nodes, baseline_P, C)
 
     # Generate the restriction matrix that maps from the fine-grid to the

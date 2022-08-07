@@ -320,7 +320,7 @@ def coarsen_As(fine_dataset, model, batch_size=64):
 
     batched_spasity_patterns_list = list(chunks(spasity_patterns_list, batch_size))
 
-    save_path = make_save_path("coarsened_batch_garlekin_As", len(batched_As), 4, 4)    
+    save_path = make_save_path("coarsened_batch_garlekin_As", len(batched_As), 4, 4)
     A_graphs_dgl_batches = [AMGDataset(DataSet(batch_As, batch_Ss, 
                                         batch_coarse_nodes_list, 
                                         batch_baseline_P_list, 
