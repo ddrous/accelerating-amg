@@ -182,7 +182,7 @@ def save_model_and_optimizer(checkpoint_prefix, model, optimizer, global_step):
             'epoch': global_step,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
-            }, checkpoint_prefix)
+            }, checkpoint_prefix, _use_new_zipfile_serialization=False)
 
 
 def train_run(run_dataset, run, batch_size, config,
@@ -400,8 +400,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='FINITE_ELEMENT_TEST', see
     create_results_dir(run_name)
     write_config_file(run_name, config, seed)
 
-    # checkpoint_prefix = os.path.join(config.train_config.checkpoint_dir + '/' + run_name, 'ckpt')
-    checkpoint_prefix = config.train_config.checkpoint_dir + '/' + run_name + '/ckpt'
+    checkpoint_prefix = config.train_config.checkpoint_dir + '/' + run_name + '/gnn_checkpoints.pth'
     create_dir(config.train_config.checkpoint_dir + '/' + run_name)
     log_dir = config.train_config.tensorboard_dir + '/' + run_name
     writer = SummaryWriter(log_dir=log_dir)
@@ -456,9 +455,6 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='FINITE_ELEMENT_TEST', see
 
 
 if __name__ == '__main__':
-    # tf_config = tf.compat.v1.ConfigProto()
-    # tf_config.gpu_options.allow_growth = True
-    # tf.compat.v1.enable_eager_execution(config=tf_config)
     np.set_printoptions(precision=2)
 
     fire.Fire(train)

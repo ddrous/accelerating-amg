@@ -122,7 +122,7 @@ def test_size(model_name, graph_model, size, test_config, run_config):
     results_file.close()
 
 
-def test_model(model_name=None, test_config='FINITE_ELEMENT_TEST', seed=1):
+def test_model(model_name=None, test_config='GRAPH_LAPLACIAN_TEST', seed=1):
     if model_name is None:
         raise RuntimeError("model name required")
     model_name = str(model_name)

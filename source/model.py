@@ -27,7 +27,7 @@ def get_model(model_name, model_config, train=False, train_config=None):
 def load_model(checkpoint_dir, model_config, train_config):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    checkpoint = torch.load(checkpoint_dir + '/ckpt')
+    checkpoint = torch.load(checkpoint_dir + '/gnn_checkpoints.pth')
 
     model = AMGModel(model_config)
     model = model.to(device)
