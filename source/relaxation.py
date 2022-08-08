@@ -1,5 +1,4 @@
 import scipy
-# import tensorflow as tf
 import scipy.sparse
 import torch
 

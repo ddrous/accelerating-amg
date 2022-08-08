@@ -5,12 +5,8 @@ import dgl
 import dgl.nn as dglnn
 from dgl.data import DGLDataset
 from dgl.data.utils import save_graphs, load_graphs
-import matlab
 import os
 import numpy as np
-from scipy.sparse import csr_matrix
-
-from data import As_poisson_grid
 
 
 def get_model(model_name, model_config, train=False, train_config=None):
@@ -173,7 +169,6 @@ class AMGModel(nn.Module):
             ## Message passing
             n_encs = g.ndata['node_encs']
             e_encs = g.edata['edge_encs']
-            # e_encs = g.edata['A']
 
             h = self.conv1(g, n_encs, edge_weight=e_encs)
             h = F.relu(h)

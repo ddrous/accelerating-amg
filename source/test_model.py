@@ -5,7 +5,7 @@ import fire
 import numpy as np
 from tqdm import tqdm
 
-import torch
+# import torch
 
 import configs
 from data import generate_A
@@ -129,7 +129,7 @@ def test_model(model_name=None, test_config='FINITE_ELEMENT_TEST', seed=1):
 
     # fix random seeds for reproducibility
     np.random.seed(seed)
-    torch.manual_seed(seed)
+    # torch.manual_seed(seed)
 
     test_config = getattr(configs, test_config).test_config
     config_file = f"../results/{model_name}/config.json"

@@ -25,6 +25,7 @@ data/*
 models/*
 !models/README.md
 !data/README.md
+!results/README.md
 
 tensorboard_dir/*
 train_checkpoints/*

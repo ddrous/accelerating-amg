@@ -4,7 +4,6 @@ import matlab.engine
 import numpy as np
 import pyamg
 import scipy.linalg
-# import tensorflow as tf
 import torch
 from pyamg.classical.interpolate import direct_interpolation
 from scipy.sparse import csr_matrix

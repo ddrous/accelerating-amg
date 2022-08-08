@@ -3,10 +3,8 @@ from functools import partial
 
 import fire
 import numpy as np
-import tensorflow as tf
 from scipy.sparse.linalg import lobpcg
 from tqdm import tqdm
-import matlab.engine
 
 import configs
 from data import generate_A_spec_cluster
@@ -19,21 +17,18 @@ def precond_test(model_name=None, test_config='GRAPH_LAPLACIAN_TEST', seed=1):
     if model_name is None:
         raise RuntimeError("model name required")
     model_name = str(model_name)
-    matlab_engine = matlab.engine.start_matlab()
 
     # fix random seeds for reproducibility
     np.random.seed(seed)
-    tf.random.set_random_seed(seed)
-    matlab_engine.eval(f'rng({seed})')
 
     test_config = getattr(configs, test_config).test_config
     config_file = f"results/{model_name}/config.json"
     with open(config_file) as f:
         data = json.load(f)
         model_config = configs.ModelConfig(**data['model_config'])
-        run_config = configs.RunConfig(**data['run_config'])
+        train_config = configs.TrainConfig(**data['train_config'])
 
-    graph_model = get_model(model_name, model_config, run_config, matlab_engine)
+    graph_model = get_model(model_name, model_config, train=False, train_config=train_config)
 
     max_levels = 2
     cycle = 'V'
@@ -44,8 +39,7 @@ def precond_test(model_name=None, test_config='GRAPH_LAPLACIAN_TEST', seed=1):
     gamma = None
     distribution = 'moons'
 
-    model_prolongation = partial(model, graph_model=graph_model, normalize_rows_by_node=False,
-                                 matlab_engine=matlab_engine)
+    model_prolongation = partial(model, graph_model=graph_model, normalize_rows_by_node=False)
     baseline_prolongation = baseline
 
     model_wins = 0
@@ -106,8 +100,5 @@ def precond_test(model_name=None, test_config='GRAPH_LAPLACIAN_TEST', seed=1):
 
 
 if __name__ == '__main__':
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    tf.enable_eager_execution(config=config)
 
     fire.Fire(precond_test)
