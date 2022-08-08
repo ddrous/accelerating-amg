@@ -53,10 +53,6 @@ def test_size(model_name, graph_model, size, test_config, run_config):
         else:
             A = generate_A(size, dist, block_periodic, root_num_blocks)
 
-        # test = np.isnan(A.toarray())
-        # res = np.any(test)
-        # print("Should be false:", res)
-
         num_unknowns = A.shape[0]
         x0 = np.random.normal(loc=0.0, scale=1.0, size=num_unknowns)
         b = np.zeros((A.shape[0]))
@@ -64,7 +60,6 @@ def test_size(model_name, graph_model, size, test_config, run_config):
         model_residuals = []
         baseline_residuals = []
 
-        # A = np.nan_to_num(A, nan=0.0, posinf=0.0, neginf=0.0)
         model_solver = ruge_stuben_custom_solver(A, model_prolongation,
                                                  strength=strength,
                                                  presmoother=presmoother,
@@ -76,7 +71,7 @@ def test_size(model_name, graph_model, size, test_config, run_config):
         _ = model_solver.solve(b, x0=x0, tol=0.0, maxiter=iterations, cycle=cycle,
                                residuals=model_residuals)
         model_residuals = np.array(model_residuals)
-        model_residuals = model_residuals[model_residuals > fp_threshold]
+        model_residuals = model_residuals[model_residuals > fp_threshold]           ## Surely to avoid dividing by too small quantities (explosion)
         model_factor = model_residuals[-1] / model_residuals[-2]
         model_errors_div_diff.append(model_factor)
 
