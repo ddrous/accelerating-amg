@@ -5,40 +5,9 @@ import dgl
 import dgl.nn as dglnn
 from dgl.data import DGLDataset
 from dgl.data.utils import save_graphs, load_graphs
+from scipy.sparse import csr_matrix
 import os
 import numpy as np
-
-
-def get_model(model_name, model_config, train=False, train_config=None):
-    checkpoint_dir = '../train_checkpoints/' + model_name
-    if not os.path.isdir(checkpoint_dir):
-        raise RuntimeError(f'training_dir {checkpoint_dir} does not exist')
-
-    graph_model, optimizer, global_step = load_model(checkpoint_dir, model_config,
-                                                     train_config)
-
-    if train:
-        return graph_model, optimizer, global_step
-    else:
-        graph_model.eval()      ## Eval mode
-        return graph_model
-
-
-def load_model(checkpoint_dir, model_config, train_config):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-    checkpoint = torch.load(checkpoint_dir + '/gnn_checkpoints.pth')
-
-    model = AMGModel(model_config)
-    model = model.to(device)
-    model.load_state_dict(checkpoint['model_state_dict'])
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=train_config.learning_rate)
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-
-    global_step = checkpoint['epoch']
-
-    return model, optimizer, global_step
 
 
 class AMGDataset(DGLDataset):
@@ -202,37 +171,29 @@ class AMGModel(nn.Module):
         return g
 
 
-def to_prolongation_matrix_csr(matrix, coarse_nodes, baseline_P, nodes, normalize_rows=True,
-                               normalize_rows_by_node=False):
-    """
-    sparse version of the below function, for when the dense matrix is too large to fit in GPU memory
-    used only for inference, so no need for backpropagation, inputs are csr matrices
-    """
-    # prolongation from coarse point to itself should be identity. This corresponds to 1's on the diagonal
-    matrix.setdiag(np.ones(matrix.shape[0]))
+def dgl_graph_to_sparse_matrices(dgl_graph, val_feature='P', return_nodes=False):
+    dgl_graph = dgl.unbatch(dgl_graph)
+    num_graphs = len(dgl_graph)
+    graphs = [dgl_graph[i] for i in range(num_graphs)]
 
-    # select only columns corresponding to coarse nodes
-    matrix = matrix[:, coarse_nodes]
+    matrices = []
+    nodes_lists = []
+    for graph in graphs:
+        indices = torch.stack(graph.edges(), axis=0)
+        values = graph.edata[val_feature].squeeze()
+        n_nodes = graph.num_nodes()
+        matrix = torch.sparse_coo_tensor(indices, values, (n_nodes, n_nodes))
+         # reordering is required because the pyAMG coarsening step does not preserve indices order
+        matrix = matrix.coalesce()
+        matrices.append(matrix)
 
-    # set sparsity pattern (interpolatory sets) to be of baseline prolongation
-    baseline_P_mask = (baseline_P != 0).astype(np.float64)
-    matrix = matrix.multiply(baseline_P_mask)
-    matrix.eliminate_zeros()
-
-    if normalize_rows:
-        if normalize_rows_by_node:
-            baseline_row_sum = nodes
-        else:
-            baseline_row_sum = baseline_P.sum(axis=1)
-            baseline_row_sum = np.array(baseline_row_sum)[:, 0]
-
-        matrix_row_sum = np.array(matrix.sum(axis=1))[:, 0]
-        # https://stackoverflow.com/a/12238133
-        matrix_copy = matrix.copy()
-        matrix_copy.data /= matrix_row_sum.repeat(np.diff(matrix_copy.indptr))
-        matrix_copy.data *= baseline_row_sum.repeat(np.diff(matrix_copy.indptr))
-        matrix = matrix_copy
-    return matrix
+    if return_nodes:
+        for graph in graphs:
+            nodes_list = graph.nodes()
+            nodes_lists.append(nodes_list)
+        return matrices, nodes_lists
+    else: 
+        return matrices
 
 
 def to_prolongation_matrix_tensor(full_matrix, coarse_nodes, baseline_P, nodes,
@@ -285,28 +246,111 @@ def to_prolongation_matrix_tensor(full_matrix, coarse_nodes, baseline_P, nodes,
     return matrix, full_matrix
 
 
+def to_prolongation_matrix_csr(full_matrix, coarse_nodes, baseline_P, nodes, normalize_rows=True,
+                               normalize_rows_by_node=False):
+    """
+    sparse version of the above function, for when the dense matrix is too large to fit in GPU memory
+    used only for inference, so no need for backpropagation, inputs are csr matrices
+    """
 
-def dgl_graph_to_sparse_matrices(dgl_graph, val_feature='P', return_nodes=False):
-    dgl_graph = dgl.unbatch(dgl_graph)
-    num_graphs = len(dgl_graph)
-    graphs = [dgl_graph[i] for i in range(num_graphs)]
+    # Use Scipy csr format
+    inds = full_matrix.indices().cpu().detach().numpy()
+    vals = full_matrix.values().cpu().detach().numpy()
+    full_matrix = csr_matrix((vals, (inds[0], inds[1])))
 
-    matrices = []
-    nodes_lists = []
-    for graph in graphs:
-        indices = torch.stack(graph.edges(), axis=0)
-        values = graph.edata[val_feature].squeeze()
-        n_nodes = graph.num_nodes()
-        matrix = torch.sparse_coo_tensor(indices, values, (n_nodes, n_nodes))
-         # reordering is required because the pyAMG coarsening step does not preserve indices order
-        matrix = matrix.coalesce()
-        matrices.append(matrix)
+    # prolongation from coarse point to itself should be identity. This corresponds to 1's on the diagonal
+    full_matrix.setdiag(np.ones(full_matrix.shape[0]))
 
-    if return_nodes:
-        for graph in graphs:
-            nodes_list = graph.nodes()
-            nodes_lists.append(nodes_list)
-        return matrices, nodes_lists
-    else: 
-        return matrices
+    # # select only columns corresponding to coarse nodes
+    matrix = full_matrix[:, coarse_nodes]
+    # matrix = extract_coarse_cols_sparse(full_matrix, baseline_P.shape[0], coarse_nodes)       ## Implementation using Pytorch
 
+    # set sparsity pattern (interpolatory sets) to be of baseline prolongation
+    baseline_P_mask = (baseline_P != 0).astype(np.float64)
+    matrix = matrix.multiply(baseline_P_mask)
+    matrix.eliminate_zeros()
+
+    if normalize_rows:
+        if normalize_rows_by_node:
+            baseline_row_sum = nodes
+        else:
+            baseline_row_sum = baseline_P.sum(axis=1)
+            baseline_row_sum = np.array(baseline_row_sum)[:, 0]
+
+        matrix_row_sum = np.array(matrix.sum(axis=1))[:, 0]
+        # https://stackoverflow.com/a/12238133
+        matrix_copy = matrix.copy()
+        matrix_copy.data /= matrix_row_sum.repeat(np.diff(matrix_copy.indptr))
+        matrix_copy.data *= baseline_row_sum.repeat(np.diff(matrix_copy.indptr))
+        matrix = matrix_copy
+
+        matrix = np.nan_to_num(matrix, nan=0.0, posinf=0.0, neginf=0.0)
+
+    full_matrix[:, coarse_nodes] = matrix
+
+    return matrix, full_matrix
+
+
+def extract_coarse_cols_sparse(full_matrix, size, coarse_nodes):
+    """
+    A function to first of all add ones to the diagonal of a sparse matrix
+    Then selects only the columns corresponding to the coarse nodes
+    """
+    device = full_matrix.device
+    full_matrix  = full_matrix.coalesce()
+    inds, vals = full_matrix.indices(), full_matrix.values()
+    
+    ## First, put ones on all diagonals
+    diag = (inds[0]==inds[1])
+    diag_inds, diag_vals = torch.arange(size).to(device), torch.ones(size).to(device)
+
+    new_rows = torch.cat((inds[0][diag==False], diag_inds))
+    new_cols = torch.cat((inds[1][diag==False], diag_inds))
+    new_vals = torch.cat((vals[diag==False], diag_vals))
+
+    ##, Now, filter only the coarse columns
+    coarse_nodes.sort()
+    coarse_size = len(coarse_nodes)
+    coarse_nodes_dict = dict(zip(coarse_nodes, range(coarse_size)))
+    coarse_mask = torch.isin(new_cols, torch.IntTensor(coarse_nodes).to(device))
+
+    coarse_cols = new_cols[coarse_mask==True].to('cpu').apply_(coarse_nodes_dict.get).to(device)
+    coarse_rows = new_rows[coarse_mask==True]
+    coarse_vals = new_vals[coarse_mask==True]
+
+    coarse_inds = torch.vstack((coarse_rows, coarse_cols))
+    matrix_coo = torch.sparse_coo_tensor(coarse_inds, coarse_vals, size=(size, coarse_size)).coalesce()
+
+    return matrix_coo.to_sparse_csr()
+
+
+def get_model(model_name, model_config, train=False, train_config=None):
+    checkpoint_dir = '../train_checkpoints/' + model_name
+    if not os.path.isdir(checkpoint_dir):
+        raise RuntimeError(f'training_dir {checkpoint_dir} does not exist')
+
+    graph_model, optimizer, global_step = load_model(checkpoint_dir, model_config,
+                                                     train_config)
+
+    if train:
+        return graph_model, optimizer, global_step
+    else:
+        graph_model.eval()      ## Eval mode
+        return graph_model
+
+
+def load_model(checkpoint_dir, model_config, train_config):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    checkpoint = torch.load(checkpoint_dir + '/gnn_checkpoints.pth')
+
+    model = AMGModel(model_config)
+    model = model.to(device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=train_config.learning_rate)
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+    global_step = checkpoint['epoch']
+
+    return model, optimizer, global_step
