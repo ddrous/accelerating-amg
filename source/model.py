@@ -123,10 +123,10 @@ class AMGModel(nn.Module):
         h_feats = model_config.latent_size
 
         ## Encode nodes
-        self.W1, self.W2 = self.create_MLP(2, h_feats, h_feats)
+        self.W1, self.W2, self.W3, self.W4 = self.create_MLP(2, h_feats, h_feats)
 
         ## Encode edges
-        self.W5, self.W6 = self.create_MLP(3, h_feats, h_feats)
+        self.W5, self.W6, self.W7, self.W8 = self.create_MLP(3, h_feats, h_feats)
 
         ## Process
         self.conv1 = dglnn.SAGEConv(
@@ -137,25 +137,30 @@ class AMGModel(nn.Module):
                     in_feats=2*h_feats, out_feats=h_feats, aggregator_type='mean')
 
         ## Decode edges
-        self.W9, self.W10 = self.create_MLP(2*h_feats, h_feats, 1)    ## Concat source and dest before doing this
+        self.W9, self.W10, self.W11, self.W12 = self.create_MLP(2*h_feats, h_feats, 1)    ## Concat source and dest before doing this
 
     def create_MLP(self, in_feats, hidden_feats, out_feats):
         W1 = nn.Linear(in_feats, hidden_feats)
-        W2 = nn.Linear(hidden_feats, out_feats)
-        return W1, W2
+        W2 = nn.Linear(hidden_feats, 4*hidden_feats)
+        W3 = nn.Linear(4*hidden_feats, 2*hidden_feats)
+        W4 = nn.Linear(2*hidden_feats, out_feats)
+        return W1, W2, W3, W4
+
+    def apply_MLP(self, h, W1, W2, W3, W4):
+        return W4(F.relu(W3(F.relu(W2(F.relu(W1(h)))))))
 
     def encode_nodes(self, nodes):
         h = torch.cat([nodes.data['C'], nodes.data['F']], 1)
-        return {'node_encs': self.W2(F.relu(self.W1(h)))}
+        return {'node_encs': self.apply_MLP(h, self.W1, self.W2, self.W3, self.W4)}
 
     def encode_edges(self, edges):
         h = torch.cat([edges.data['A'], edges.data['SP1'], edges.data['SP0']], 1)
-        return {'edge_encs': self.W6(F.relu(self.W5(h)))}
+        return {'edge_encs': self.apply_MLP(h, self.W5, self.W6, self.W7, self.W8)}
 
     def decode_edges(self, edges):
         h = torch.cat([edges.src['h'], edges.dst['h']], 1)          ##Key here
         # return {'P': self.W10(F.relu(self.W9(h))).squeeze(1)}
-        return {'P': self.W10(F.relu(self.W9(h))).abs().squeeze(1)}
+        return {'P': self.apply_MLP(h, self.W9, self.W10, self.W11, self.W12).abs().squeeze(1)}
 
     def forward(self, g):
         with g.local_scope():
