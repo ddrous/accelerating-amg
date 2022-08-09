@@ -447,10 +447,10 @@ def generate_A_delaunay_periodic_lognormal(num_unknowns, uniform=False):
 def drop_row_col_matlab(A, indices, matlab_engine):
     size = A.shape[0]
     A_coo = A.tocoo()
-    A_rows = matlab.double((A_coo.row + 1))
-    A_cols = matlab.double((A_coo.col + 1))
-    indices = matlab.double((indices + 1))
-    A_values = matlab.double(A_coo.data)
+    A_rows = matlab.double((A_coo.row + 1).tolist())
+    A_cols = matlab.double((A_coo.col + 1).tolist())
+    indices = matlab.double((indices + 1).tolist())
+    A_values = matlab.double((A_coo.data).tolist())
     rows, cols, values = matlab_engine.drop_row_col(A_rows, A_cols, A_values, size, indices, nargout=3)
     rows = np.array(rows._data).reshape(rows.size, order='F') - 1
     cols = np.array(cols._data).reshape(cols.size, order='F') - 1
