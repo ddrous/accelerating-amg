@@ -5,8 +5,6 @@ import fire
 import numpy as np
 from tqdm import tqdm
 
-# import torch
-
 import configs
 from data import generate_A
 from model import get_model
@@ -16,6 +14,7 @@ from ruge_stuben_custom_solver import ruge_stuben_custom_solver
 
 def test_size(model_name, graph_model, size, test_config, run_config):
     model_prolongation = partial(model, graph_model=graph_model,
+                                normalize_rows = run_config.normalize_rows,
                                  normalize_rows_by_node=run_config.normalize_rows_by_node)
     baseline_prolongation = baseline
 

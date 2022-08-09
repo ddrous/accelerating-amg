@@ -1,13 +1,11 @@
-import numpy as np
 from scipy.sparse import csr_matrix
 from dgl.dataloading import GraphDataLoader
-import torch
 
 from model import to_prolongation_matrix_tensor, dgl_graph_to_sparse_matrices, AMGDataset
 from dataset import DataSet
 from multigrid_utils import P_square_sparsity_pattern
 
-def model(A, coarse_nodes, baseline_P, C, graph_model, normalize_rows_by_node=False):
+def model(A, coarse_nodes, baseline_P, C, graph_model, normalize_rows=True, normalize_rows_by_node=False):
     device = next(graph_model.parameters()).device
 
     # A = np.nan_to_num(A, nan=0.0, posinf=0.0, neginf=0.0)
@@ -23,10 +21,10 @@ def model(A, coarse_nodes, baseline_P, C, graph_model, normalize_rows_by_node=Fa
 
     # P_square_sparse = sparse_tensor_to_csr(P_square_sparse)
     P_dense, _ = to_prolongation_matrix_tensor(P_square_sparse, coarse_nodes, baseline_P, nodes,
-                                       normalize_rows_by_node=normalize_rows_by_node)
+                                                normalize_rows=normalize_rows,
+                                                normalize_rows_by_node=normalize_rows_by_node)
 
     P_numpy = P_dense.cpu().detach().numpy()
-    P_numpy = np.nan_to_num(P_numpy, nan=0.0, posinf=0.0, neginf=0.0)           ## Avoid Nan wiehgts wrediction
     P_csr = csr_matrix(P_numpy)
 
     return P_csr
