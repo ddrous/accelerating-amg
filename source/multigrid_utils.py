@@ -20,15 +20,25 @@ def frob_norm(A, power=1):
             curr_power = A @ curr_power
         return torch.linalg.norm(curr_power, axis=[-2, -1], ord='fro') ** (1 / power)
 
-def normalized_loss(A):
-    A = torch.as_tensor(A)
-    # num_rows = A.shape[0]
-    row_sum = A.sum(dim=1)
-    # return torch.abs(row_sum - 1.0).sum().item()
-    # return torch.square(row_sum - 1.0).sum().item()
-    # return torch.linalg.norm(row_sum - 1.0)
-    return torch.linalg.norm(row_sum - 1.0, ord=1)
-    # return torch.linalg.norm(A, ord='fro')
+def normalizing_loss(P):
+    """
+    Computes a loss to enforce nomalized predictions 
+    """
+    row_sum = torch.as_tensor(P).sum(dim=1)
+    loss = torch.linalg.norm(row_sum - 1.0, ord=1)
+
+    # if normalize_rows_by_node:
+    #     baseline_row_sum = torch.as_tensor(nodes, device=device, dtype=dtype).reshape(-1,1)      ### Just nodes
+    # else:
+    #     baseline_row_sum = torch.sum(baseline_P, dim=1, dtype=dtype).reshape(-1,1)         ### Basically just 1 
+
+    P_row_sum = P.sum(dim=1).reshape(-1,1)
+    P_normed = P / P_row_sum
+    P_normed = torch.nan_to_num(P_normed, nan=0.0, posinf=0.0, neginf=0.0)
+
+    # matrix = matrix * baseline_row_sum
+
+    return loss, P_normed
 
 
 def P_square_sparsity_pattern(P, coarse_nodes):
@@ -147,7 +157,7 @@ def block_diagonalize_A_single(A, root_num_blocks, tensor=False):
     #     return [csr_matrix(block) for block_list in blocks for block in block_list]
 
     return blocks
-    
+
 
 
 def block_diagonalize_A(A, root_num_blocks):
@@ -179,25 +189,6 @@ def block_diagonalize_A(A, root_num_blocks):
     return np.stack(small_blocks)
 
 
-def pad_P(P, coarse_nodes):
-    total_size = P.shape[0]
-    zero_column = tf.zeros([total_size], dtype=tf.float64)
-    P_cols = tf.unstack(P, axis=1)
-    full_P_cols = []
-    curr_P_col = 0
-    is_coarse = np.in1d(range(total_size), coarse_nodes, assume_unique=True)
-    for col_index in range(total_size):
-        if is_coarse[col_index]:
-            column = P_cols[curr_P_col]
-            curr_P_col += 1
-        else:
-            column = zero_column
-        full_P_cols.append(column)
-
-    full_P = tf.transpose(tf.stack(full_P_cols))
-    full_P = tf.cast(full_P, tf.complex128)
-    return full_P
-
 
 def block_diagonalize_P(P, root_num_blocks, coarse_nodes):
     """
@@ -221,9 +212,6 @@ def block_diagonalize_P(P, root_num_blocks, coarse_nodes):
     blocks = blocks[1:]  # ignore zero mode block
 
     block_coarse_nodes = coarse_nodes[:len(coarse_nodes) // root_num_blocks**2]
-    
-    # print("BLOCK COARSE NODES", block_coarse_nodes)
-    # assert 1==2, "NO"
 
     ##<<<----------------- Ugly trick in case the first nodes are not coarse: FIX THIS
     block_coarse_nodes = np.array(block_coarse_nodes) % root_num_blocks

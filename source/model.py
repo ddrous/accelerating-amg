@@ -217,6 +217,8 @@ def to_prolongation_matrix_tensor(full_matrix, coarse_nodes, baseline_P, nodes,
                                             device=device, dtype=dtype)
     matrix = matrix * baseline_zero_mask
 
+    raw_matrix = torch.clone(matrix)                      ## Unormalised tensor on which to apply the normalising loss
+
     if normalize_rows:
         if normalize_rows_by_node:
             baseline_row_sum = torch.as_tensor(nodes, device=device, dtype=dtype).reshape(-1,1)      ### Just nodes
@@ -240,10 +242,14 @@ def to_prolongation_matrix_tensor(full_matrix, coarse_nodes, baseline_P, nodes,
 
         matrix = matrix * baseline_row_sum
 
-    ## Refill the square matrix with appropriate columns
+    ## Refill the square matrix with appropriate coarse columns and zeros for padding
     full_matrix[:, coarse_nodes] = matrix
+    size = full_matrix.shape[0]
+    non_coarse_nodes = np.setdiff1d(np.arange(size), coarse_nodes, assume_unique=1)
+    zero_cols = torch.zeros((size, len(non_coarse_nodes)), device=device)
+    full_matrix[:, non_coarse_nodes] = zero_cols
 
-    return matrix, full_matrix
+    return matrix, full_matrix, raw_matrix
 
 
 def to_prolongation_matrix_csr(full_matrix, coarse_nodes, baseline_P, nodes, normalize_rows=True,
@@ -351,7 +357,8 @@ def load_model(checkpoint_dir, model_config, train_config):
     optimizer = torch.optim.Adam(model.parameters(), lr=train_config.learning_rate)
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
+    # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.95, patience=50, min_lr=1e-6)
     # scheduler.load_state_dict(checkpoint['scheduler'])
 
     global_step = checkpoint['epoch']

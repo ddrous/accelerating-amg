@@ -29,7 +29,7 @@ class RunConfig:
 
 
 class TrainConfig:
-    def __init__(self, samples_per_run=2560, num_runs=100, batch_size=32, learning_rate=1e-3, fourier=False,
+    def __init__(self, samples_per_run=256, num_runs=100, batch_size=32, learning_rate=1e-3, fourier=False,
                  coarsen=True, checkpoint_dir='../train_checkpoints', tensorboard_dir='../tensorboard_dir', load_model=False):
         self.samples_per_run = samples_per_run
         self.num_runs = num_runs
@@ -92,7 +92,7 @@ FINITE_ELEMENT_TEST.test_config.test_sizes = (1024, 2048)
 
 GRAPH_LAPLACIAN_TEST = Config()
 GRAPH_LAPLACIAN_TEST.data_config.dist = 'lognormal_laplacian'
-# GRAPH_LAPLACIAN_TEST.test_config.test_sizes = (256, 8192)
+GRAPH_LAPLACIAN_TEST.test_config.test_sizes = (256, 2048)
 
 GRAPH_LAPLACIAN_RS_TEST = Config()
 GRAPH_LAPLACIAN_RS_TEST.test_config.splitting = 'RS'

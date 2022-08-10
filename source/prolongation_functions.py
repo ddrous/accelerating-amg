@@ -21,7 +21,7 @@ def model(A, coarse_nodes, baseline_P, C, graph_model, normalize_rows=True, norm
     [P_square_sparse], nodes = dgl_graph_to_sparse_matrices(P_graph_dgl, val_feature='P', return_nodes=True)
 
     ### P_square_sparse = sparse_tensor_to_csr(P_square_sparse)
-    # P_dense, _ = to_prolongation_matrix_tensor(P_square_sparse, coarse_nodes, baseline_P, nodes,
+    # P_dense, _, _ = to_prolongation_matrix_tensor(P_square_sparse, coarse_nodes, baseline_P, nodes,
     #                                             normalize_rows=normalize_rows,
     #                                             normalize_rows_by_node=normalize_rows_by_node)
     # P_numpy = P_dense.cpu().detach().numpy()

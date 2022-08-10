@@ -70,8 +70,8 @@ def test_size(model_name, graph_model, size, test_config, run_config):
         _ = model_solver.solve(b, x0=x0, tol=0.0, maxiter=iterations, cycle=cycle,
                                residuals=model_residuals)
         model_residuals = np.array(model_residuals)
+        model_residuals = model_residuals[~np.isnan(model_residuals)]         #### Nan not allowed
         model_residuals = model_residuals[model_residuals > fp_threshold]           ## Surely to avoid dividing by too small quantities (explosion)
-        model_residuals = model_residuals[~np.isnan(model_residuals)]         #### Nana not allowed
         model_factor = model_residuals[-1] / model_residuals[-2]
         model_errors_div_diff.append(model_factor)
 
@@ -86,8 +86,8 @@ def test_size(model_name, graph_model, size, test_config, run_config):
         _ = baseline_solver.solve(b, x0=x0, tol=0.0, maxiter=iterations, cycle=cycle,
                                   residuals=baseline_residuals)
         baseline_residuals = np.array(baseline_residuals)
+        baseline_residuals = baseline_residuals[~np.isnan(baseline_residuals)]         #### Nan not allowed
         baseline_residuals = baseline_residuals[baseline_residuals > fp_threshold]
-        baseline_residuals = baseline_residuals[~np.isnan(baseline_residuals)]         #### Nana not allowed
         baseline_factor = baseline_residuals[-1] / baseline_residuals[-2]
         baseline_errors_div_diff.append(baseline_factor)
 
@@ -123,7 +123,7 @@ def test_size(model_name, graph_model, size, test_config, run_config):
     results_file.close()
 
 
-def test_model(model_name=None, test_config='GRAPH_LAPLACIAN_TEST', seed=1):
+def test_model(model_name=None, test_config='FINITE_ELEMENT_TEST', seed=1):
     if model_name is None:
         raise RuntimeError("model name required")
     model_name = str(model_name)
