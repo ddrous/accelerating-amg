@@ -1,6 +1,7 @@
 import copy
 import os
 import random
+from sched import scheduler
 import string
 
 import fire
@@ -177,18 +178,20 @@ def loss(dataset, P_graphs_dgl, run_config, train_config, data_config):
     return total_norm / batch_size, M  # M is chosen randomly - the last in the batch
 
 
-def save_model_and_optimizer(checkpoint_prefix, model, optimizer, global_step):
+def save_model_and_optimizer(checkpoint_prefix, model, optimizer, scheduler, global_step):
     torch.save({
             'epoch': global_step,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict(),
             }, checkpoint_prefix, _use_new_zipfile_serialization=False)
 
 
 def train_run(run_dataset, run, batch_size, config,
               model, optimizer, checkpoint_prefix,
               eval_dataset, eval_A_dgl, eval_config, 
-              device="cpu", nb_iter_batch=[None], tb_writer=None):
+              device="cpu", nb_iter_batch=[None], 
+              tb_writer=None, scheduler=None):
     num_As = len(run_dataset.As)
     if num_As % batch_size != 0:
         raise RuntimeError("batch size must divide training data size")
@@ -218,7 +221,7 @@ def train_run(run_dataset, run, batch_size, config,
         print(f"total_loss: {total_loss.item()}")
         save_every = max(1000 // batch_size, 1)
         if batch % save_every == 0:
-            save_model_and_optimizer(checkpoint_prefix, model, optimizer, int(batch))      ## <------ Find a better way to get the global_step (the number count for the batches)
+            save_model_and_optimizer(checkpoint_prefix, model, optimizer, scheduler, int(batch))      ## <------ Find a better way to get the global_step (the number count for the batches)
 
         optimizer.zero_grad()
         total_loss.backward()
@@ -231,6 +234,9 @@ def train_run(run_dataset, run, batch_size, config,
         if tb_writer is not None:
             record_tb(M, run, num_As, batch, batch_size, total_loss.item(), loop, model,
                   variables, eval_dataset, eval_A_dgl, eval_config, nb_iter_batch[0], tb_writer)
+
+    if scheduler:
+        scheduler.step()
 
 
 def record_tb(M, run, num_As, batch, batch_size, frob_loss, loop, model,
@@ -394,7 +400,8 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='FINITE_ELEMENT_TEST', see
         model = AMGModel(config.model_config)
         model = model.to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=config.train_config.learning_rate)
-    
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
+
     run_name = ''.join(random.choices(string.digits, k=5))  # to make the run_name string unique
     # run_name = '00000'  # all runs have same name
     create_results_dir(run_name)
@@ -423,7 +430,8 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='FINITE_ELEMENT_TEST', see
                                model, optimizer,
                                checkpoint_prefix,
                                eval_dataset, eval_dataset_dgl, eval_config,
-                               device, nb_iter_batch, writer)
+                               device, nb_iter_batch, writer, scheduler)
+
 
     if config.train_config.coarsen:
         old_model = copy.deepcopy(model)
@@ -451,7 +459,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='FINITE_ELEMENT_TEST', see
                                    model, optimizer,
                                    checkpoint_prefix,
                                    eval_dataset, eval_dataset_dgl, eval_config,
-                                   device, nb_iter_batch, writer)
+                                   device, nb_iter_batch, writer, scheduler)
 
 
 if __name__ == '__main__':

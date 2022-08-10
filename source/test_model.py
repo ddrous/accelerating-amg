@@ -71,6 +71,7 @@ def test_size(model_name, graph_model, size, test_config, run_config):
                                residuals=model_residuals)
         model_residuals = np.array(model_residuals)
         model_residuals = model_residuals[model_residuals > fp_threshold]           ## Surely to avoid dividing by too small quantities (explosion)
+        model_residuals = model_residuals[~np.isnan(model_residuals)]         #### Nana not allowed
         model_factor = model_residuals[-1] / model_residuals[-2]
         model_errors_div_diff.append(model_factor)
 
@@ -86,6 +87,7 @@ def test_size(model_name, graph_model, size, test_config, run_config):
                                   residuals=baseline_residuals)
         baseline_residuals = np.array(baseline_residuals)
         baseline_residuals = baseline_residuals[baseline_residuals > fp_threshold]
+        baseline_residuals = baseline_residuals[~np.isnan(baseline_residuals)]         #### Nana not allowed
         baseline_factor = baseline_residuals[-1] / baseline_residuals[-2]
         baseline_errors_div_diff.append(baseline_factor)
 

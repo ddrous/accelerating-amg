@@ -329,11 +329,11 @@ def get_model(model_name, model_config, train=False, train_config=None):
     if not os.path.isdir(checkpoint_dir):
         raise RuntimeError(f'training_dir {checkpoint_dir} does not exist')
 
-    graph_model, optimizer, global_step = load_model(checkpoint_dir, model_config,
+    graph_model, optimizer, scheduler, global_step = load_model(checkpoint_dir, model_config,
                                                      train_config)
 
     if train:
-        return graph_model, optimizer, global_step
+        return graph_model, optimizer, scheduler, global_step
     else:
         graph_model.eval()      ## Eval mode
         return graph_model
@@ -351,6 +351,9 @@ def load_model(checkpoint_dir, model_config, train_config):
     optimizer = torch.optim.Adam(model.parameters(), lr=train_config.learning_rate)
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
+    # scheduler.load_state_dict(checkpoint['scheduler'])
+
     global_step = checkpoint['epoch']
 
-    return model, optimizer, global_step
+    return model, optimizer, scheduler, global_step
