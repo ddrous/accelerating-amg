@@ -129,7 +129,7 @@ class AMGModel(nn.Module):
     def decode_edges(self, edges):
         h = torch.cat([edges.src['h'], edges.dst['h']], 1)          ##Key here
         # return {'P': self.W10(F.relu(self.W9(h))).squeeze(1)}
-        return {'P': self.apply_MLP(h, self.W9, self.W10, self.W11, self.W12).abs().squeeze(1)}
+        return {'P': self.apply_MLP(h, self.W9, self.W10, self.W11, self.W12).squeeze(1)}
 
     def forward(self, g):
         with g.local_scope():
@@ -152,7 +152,7 @@ class AMGModel(nn.Module):
             h = F.relu(h)
             
             h = torch.cat([h, n_encs], 1)
-            h = self.conv2(g, h, edge_weight=e_encs)
+            h = self.conv3(g, h, edge_weight=e_encs)
 
             ## Decode edges
             g.ndata['h'] = h
@@ -233,9 +233,8 @@ def to_prolongation_matrix_tensor(full_matrix, coarse_nodes, baseline_P, nodes,
 
         # there might be a few rows that are all 0's - corresponding to fine points that are not connected to any
         # coarse point. We use "nan_to_num" to put these rows to 0's
-        # matrix = torch.divide(matrix, torch.reshape(matrix_row_sum, (-1, 1)))
-
-        matrix = matrix / matrix_row_sum
+        matrix = torch.divide(matrix, matrix_row_sum)
+        # matrix = matrix / matrix_row_sum
         matrix = torch.nan_to_num(matrix, nan=0.0, posinf=0.0, neginf=0.0)
 
         # matrix = torch.nn.functional.normalize(matrix, p=1)
@@ -358,7 +357,7 @@ def load_model(checkpoint_dir, model_config, train_config):
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.95, patience=100, min_lr=1e-6)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.95, patience=10, min_lr=1e-6)
     # scheduler.load_state_dict(checkpoint['scheduler'])
 
     global_step = checkpoint['epoch']

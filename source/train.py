@@ -22,7 +22,7 @@ from data import generate_A
 from dataset import DataSet
 from model import AMGModel, dgl_graph_to_sparse_matrices, to_prolongation_matrix_tensor, AMGDataset
 from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
-    two_grid_error_matrix, compute_coarse_A, P_square_sparsity_pattern, normalizing_loss
+    two_grid_error_matrix, compute_coarse_A, P_square_sparsity_pattern, normalizing_loss, negative_loss
 from relaxation import relaxation_matrices
 from utils import create_dir, create_results_dir, write_config_file, most_frequent_splitting, chunks, make_save_path
 
@@ -152,15 +152,9 @@ def loss(dataset, P_graphs_dgl, run_config, train_config, data_config):
             baseline_P = dataset.baseline_P_list[i]
             nodes = nodes_list[i]
 
-            P, full_P, P_unnormed = to_prolongation_matrix_tensor(P_square, coarse_nodes, baseline_P, nodes,
-                                              normalize_rows=False, ## Row-normalisation is enforced through a loss function too
+            P, _, P_unnormed = to_prolongation_matrix_tensor(P_square, coarse_nodes, baseline_P, nodes,
+                                              normalize_rows=True, ## Row-normalisation is enforced through a loss function too
                                               normalize_rows_by_node=False)
-
-
-            ## A loss function to enforce the row-wize sum = 1
-            # true_or_false = torch.as_tensor(run_config.normalize_rows, dtype=P.dtype)
-            norm_loss, P_normed = normalizing_loss(P_unnormed)
-            # norm_loss = norm_loss * true_or_false
 
             R = torch.transpose(P, dim0=-2, dim1=-1)
             S = torch.as_tensor(dataset.Ss[i], dtype=P.dtype, device=P.device)
@@ -171,8 +165,15 @@ def loss(dataset, P_graphs_dgl, run_config, train_config, data_config):
             ## A loss fucntion to minimize the frobenius norm
             frob_loss = frob_norm(M)
 
-            eps = 0.1
-            total_norm = total_norm + (1-eps)*frob_loss + eps*norm_loss
+            ## A loss function to enforce the row-wize sum = 1
+            # true_or_false = torch.as_tensor(run_config.normalize_rows, dtype=P.dtype)
+            norm_loss, P_normed = normalizing_loss(P_unnormed)
+            # norm_loss = norm_loss * true_or_false
+
+            neg_loss = negative_loss(P_unnormed)
+
+            eps = 0.05
+            total_norm = total_norm + (eps)*frob_loss + (1)*norm_loss + (1)*neg_loss
 
     return total_norm / batch_size, M  # M is chosen randomly - the last in the batch
 
@@ -349,7 +350,7 @@ def coarsen_As(fine_dataset, model, batch_size=64):
         nodes = nodes_list[i]
         coarse_nodes = coarse_nodes_list[i]
         baseline_P = baseline_P_list[i]
-        P, _, _ = to_prolongation_matrix_tensor(P_square, coarse_nodes, baseline_P, nodes)
+        P, _, _ = to_prolongation_matrix_tensor(P_square, coarse_nodes, baseline_P, nodes, normalize_rows=True)
         R = torch.transpose(P, dim0=-2, dim1=-1)
         A_csr = As[i]
         A = torch.as_tensor(A_csr.toarray(), dtype=torch.float32, device=device)
@@ -400,7 +401,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='FINITE_ELEMENT_TEST', see
         model = model.to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=config.train_config.learning_rate)
         # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.95, patience=100, min_lr=1e-6)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.95, patience=10, min_lr=1e-6)
 
     run_name = ''.join(random.choices(string.digits, k=5))  # to make the run_name string unique
     # run_name = '00000'  # all runs have same name

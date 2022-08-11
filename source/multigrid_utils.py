@@ -27,19 +27,22 @@ def normalizing_loss(P):
     row_sum = torch.as_tensor(P).sum(dim=1)
     loss = torch.linalg.norm(row_sum - 1.0, ord=1)
 
-    # if normalize_rows_by_node:
-    #     baseline_row_sum = torch.as_tensor(nodes, device=device, dtype=dtype).reshape(-1,1)      ### Just nodes
-    # else:
-    #     baseline_row_sum = torch.sum(baseline_P, dim=1, dtype=dtype).reshape(-1,1)         ### Basically just 1 
-
-    P_row_sum = P.sum(dim=1).reshape(-1,1)
-    P_normed = P / P_row_sum
-    P_normed = torch.nan_to_num(P_normed, nan=0.0, posinf=0.0, neginf=0.0)
-
-    # matrix = matrix * baseline_row_sum
+    row_sum = row_sum.reshape(-1,1)
+    # P_normed = P / P_row_sum
+    P_normed = torch.divide(P, row_sum)
+    # P_normed = torch.nan_to_num(P_normed, nan=0.0, posinf=0.0, neginf=0.0)
 
     return loss, P_normed
 
+def negative_loss(P):
+    """
+    Computes a loss to enforce positive weights predictions 
+    """
+    P_flatten = P.flatten()
+    P_neg = P_flatten[P_flatten < 0]
+    loss = torch.linalg.norm(P_neg, ord=1)
+
+    return loss
 
 def P_square_sparsity_pattern(P, coarse_nodes):
     """
