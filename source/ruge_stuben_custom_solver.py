@@ -178,7 +178,6 @@ def extend_hierarchy(levels, strength, CF, keep, prolongation_function):
 
     # Create a prolongation matrix with the same coarse-fine splitting and sparsity pattern
     # as the baseline
-
     P = prolongation_function(A, coarse_nodes, baseline_P, C)
 
     # Generate the restriction matrix that maps from the fine-grid to the

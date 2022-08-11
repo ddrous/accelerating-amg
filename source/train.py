@@ -217,7 +217,7 @@ def train_run(run_dataset, run, batch_size, config,
         total_loss, M = loss(batch_dataset, batch_P_dgl_dataset,
                             config.run_config, config.train_config, config.data_config)
 
-        print(f"total_loss: {total_loss.item()} \t \t \t current_learning_rate: {scheduler.get_last_lr()}")
+        print(f"total_loss: {total_loss.item()} \t \t \t current_learning_rate: {optimizer.param_groups[0]['lr']}")
         save_every = max(1000 // batch_size, 1)
         if batch % save_every == 0:
             save_model_and_optimizer(checkpoint_prefix, model, optimizer, scheduler, int(batch))      ## <------ Find a better way to get the global_step (the number count for the batches)
@@ -400,7 +400,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='FINITE_ELEMENT_TEST', see
         model = model.to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=config.train_config.learning_rate)
         # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.95, patience=50, min_lr=1e-6)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.95, patience=100, min_lr=1e-6)
 
     run_name = ''.join(random.choices(string.digits, k=5))  # to make the run_name string unique
     # run_name = '00000'  # all runs have same name
