@@ -90,6 +90,7 @@ class AMGModel(nn.Module):
     def __init__(self, model_config):
         super().__init__()
         h_feats = model_config.latent_size
+        out_conv_feats = 3
 
         ## Encode nodes
         self.W1, self.W2, self.W3, self.W4 = self.create_MLP(2, h_feats, h_feats)
@@ -105,20 +106,24 @@ class AMGModel(nn.Module):
         # self.conv3 = dglnn.SAGEConv(
         #             in_feats=2*h_feats, out_feats=h_feats, aggregator_type='mean')
 
-        def edge_conv_func(self, h):
-            We1, We2, We3, We4 = self.create_MLP(2*h_feats, 4, 8*h_feats)
-            self.apply_MLP(h, We1, We2, We3, We4)
+        self.We1 = nn.Linear(h_feats, 2*h_feats)
+        self.We2 = nn.Linear(2*h_feats, 2*out_conv_feats*h_feats)
+        # self.create_MLP(h_feats, 2*h_feats, 2*(h_feats**2))
+        def edge_conv_func(h):
+            # print("Device:", next(self.We1.parameters()).device)
+            # print("Device 2:", h.device)
+            # return self.apply_MLP(h, self.We1, self.We2, self.We3, self.We4)
+            return self.We2(F.relu(self.We1(h)))
 
-        self.edge_func1 = self.create_apply_MLP()
         self.conv1 = dglnn.SAGEConv(
-                    in_feats=h_feats, out_feats=h_feats, aggregator_type='mean', dropout=0.25, activation=F.relu)
+                    in_feats=h_feats, out_feats=h_feats, aggregator_type='mean', feat_drop=0.25, activation=F.relu)
         self.conv2 = dglnn.NNConv(
-                    in_feats=2*h_feats, out_feats=h_feats, edge_func=edge_conv_func, aggregator_type='mean')
-        self.conv3 = dglnn.SAGEConv(
-                    in_feats=2*h_feats, out_feats=h_feats, aggregator_type='mean', activation=F.relu)
+                    in_feats=2*h_feats, out_feats=out_conv_feats, edge_func=edge_conv_func, aggregator_type='mean')
+        # self.conv3 = dglnn.SAGEConv(
+        #             in_feats=2*h_feats, out_feats=h_feats, aggregator_type='mean', activation=F.relu)
 
         ## Decode edges
-        self.W9, self.W10, self.W11, self.W12 = self.create_MLP(2*h_feats, h_feats, 1)    ## Concat source and dest before doing this
+        self.W9, self.W10, self.W11, self.W12 = self.create_MLP(2*out_conv_feats, h_feats//2, 1)    ## Concat source and dest before doing this
 
     def create_MLP(self, in_feats, hidden_feats, out_feats):
         W1 = nn.Linear(in_feats, hidden_feats)
@@ -160,11 +165,12 @@ class AMGModel(nn.Module):
             # h = F.relu(h)
 
             h = torch.cat([h, n_encs], 1)
+            # h = self.conv2(g, h, edge_weight=e_encs)
             h = self.conv2(g, h, efeat=e_encs)
             # h = F.relu(h)
             
-            h = torch.cat([h, n_encs], 1)
-            h = self.conv3(g, h, edge_weight=e_encs)
+            # h = torch.cat([h, n_encs], 1)
+            # h = self.conv3(g, h, edge_weight=e_encs)
 
             ## Decode edges
             g.ndata['h'] = h
