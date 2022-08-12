@@ -22,7 +22,7 @@ from data import generate_A
 from dataset import DataSet
 from model import AMGModel, dgl_graph_to_sparse_matrices, to_prolongation_matrix_tensor, AMGDataset
 from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
-    two_grid_error_matrix, compute_coarse_A, P_square_sparsity_pattern, normalizing_loss, negative_loss
+    two_grid_error_matrix, compute_coarse_A, P_square_sparsity_pattern, normalizing_loss, negative_loss, spectral_loss
 from relaxation import relaxation_matrices
 from utils import create_dir, create_results_dir, write_config_file, most_frequent_splitting, chunks, make_save_path
 
@@ -163,7 +163,8 @@ def loss(dataset, P_graphs_dgl, run_config, train_config, data_config):
             M = two_grid_error_matrix(A, P, R, S)
 
             ## A loss fucntion to minimize the frobenius norm
-            frob_loss = frob_norm(M)
+            # frob_loss = frob_norm(M)
+            frob_loss = spectral_loss(M)
 
             ## A loss function to enforce the row-wize sum = 1
             # true_or_false = torch.as_tensor(run_config.normalize_rows, dtype=P.dtype)
@@ -401,7 +402,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='FINITE_ELEMENT_TEST', see
         model = model.to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=config.train_config.learning_rate)
         # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.95, patience=10, min_lr=1e-6)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.95, patience=100, min_lr=1e-6)
 
     run_name = ''.join(random.choices(string.digits, k=5))  # to make the run_name string unique
     # run_name = '00000'  # all runs have same name
