@@ -12,6 +12,9 @@ from utils import chunks, most_frequent_splitting
 
 
 def frob_norm(A, power=1):
+    """
+    Computes the frobenius norm 
+    """
     if power == 1:
         return torch.linalg.norm(torch.as_tensor(A), axis=[-2, -1], ord='fro')
     else:
@@ -19,6 +22,12 @@ def frob_norm(A, power=1):
         for _ in range(power - 1):
             curr_power = A @ curr_power
         return torch.linalg.norm(curr_power, axis=[-2, -1], ord='fro') ** (1 / power)
+
+def spectral_loss(A):
+    """
+    Computes the spectral radius 
+    """
+    return torch.abs(torch.linalg.eigvals(torch.as_tensor(A))).max()
 
 def normalizing_loss(P):
     """

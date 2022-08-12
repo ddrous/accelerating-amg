@@ -70,7 +70,7 @@ def test_size(model_name, graph_model, size, test_config, run_config):
         _ = model_solver.solve(b, x0=x0, tol=0.0, maxiter=iterations, cycle=cycle,
                                residuals=model_residuals)
         model_residuals = np.array(model_residuals)
-        model_residuals = model_residuals[~np.isnan(model_residuals)]         #### Nan not allowed
+        model_residuals = model_residuals[(~np.isnan(model_residuals)) & (~np.isinf(model_residuals))]         #### Nan not allowed
         model_residuals = model_residuals[model_residuals > fp_threshold]           ## Surely to avoid dividing by too small quantities (explosion)
         model_factor = model_residuals[-1] / model_residuals[-2]
         model_errors_div_diff.append(model_factor)
@@ -97,6 +97,9 @@ def test_size(model_name, graph_model, size, test_config, run_config):
     model_errors_div_diff_std = np.std(model_errors_div_diff)
     baseline_errors_div_diff_mean = np.mean(baseline_errors_div_diff)
     baseline_errors_div_diff_std = np.std(baseline_errors_div_diff)
+
+    print("List of residuals model:", model_errors_div_diff)
+    print("List of residuals baseline:", baseline_errors_div_diff)
 
     if type(splitting) == tuple:
         splitting_str = splitting[0] + '_'+ '_'.join([f'{key}_{value}' for key, value in splitting[1].items()])
