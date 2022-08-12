@@ -357,7 +357,7 @@ def load_model(checkpoint_dir, model_config, train_config):
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.95, patience=10, min_lr=1e-6)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.95, patience=100, min_lr=1e-6)
     # scheduler.load_state_dict(checkpoint['scheduler'])
 
     global_step = checkpoint['epoch']
