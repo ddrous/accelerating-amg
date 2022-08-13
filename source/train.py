@@ -163,8 +163,8 @@ def loss(dataset, P_graphs_dgl, run_config, train_config, data_config):
             M = two_grid_error_matrix(A, P, R, S)
 
             ## A loss fucntion to minimize the frobenius norm
-            # frob_loss = frob_norm(M)
-            frob_loss = spectral_loss(M)
+            frob_loss = frob_norm(M)
+            # frob_loss = spectral_loss(M)
 
             ## A loss function to enforce the row-wize sum = 1
             # true_or_false = torch.as_tensor(run_config.normalize_rows, dtype=P.dtype)
