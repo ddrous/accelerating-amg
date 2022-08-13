@@ -90,7 +90,7 @@ class AMGModel(nn.Module):
     def __init__(self, model_config):
         super().__init__()
         h_feats = model_config.latent_size
-        out_conv_feats = 3
+        out_conv_feats = 4
 
         ## Encode nodes
         self.W1, self.W2, self.W3, self.W4 = self.create_MLP(2, h_feats, h_feats)

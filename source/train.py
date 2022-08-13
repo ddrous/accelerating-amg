@@ -170,10 +170,12 @@ def loss(dataset, P_graphs_dgl, run_config, train_config, data_config):
             # true_or_false = torch.as_tensor(run_config.normalize_rows, dtype=P.dtype)
             norm_loss, P_normed = normalizing_loss(P_unnormed)
             # norm_loss = norm_loss * true_or_false
+            norm_loss = 0
 
             neg_loss = negative_loss(P_unnormed)
+            neg_loss = 0
 
-            eps = 0.05
+            eps = 1
             total_norm = total_norm + (eps)*frob_loss + (1)*norm_loss + (1)*neg_loss
 
     return total_norm / batch_size, M  # M is chosen randomly - the last in the batch
@@ -402,7 +404,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='FINITE_ELEMENT_TEST', see
         model = model.to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=config.train_config.learning_rate)
         # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.95, patience=20, min_lr=1e-6)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.95, patience=100, min_lr=1e-6)
 
     run_name = ''.join(random.choices(string.digits, k=5))  # to make the run_name string unique
     # run_name = '00000'  # all runs have same name
