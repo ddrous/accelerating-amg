@@ -107,13 +107,15 @@ class AMGModel(nn.Module):
         #             in_feats=2*h_feats, out_feats=h_feats, aggregator_type='mean')
 
         self.We1 = nn.Linear(h_feats, 2*h_feats)
-        self.We2 = nn.Linear(2*h_feats, 2*out_conv_feats*h_feats)
+        self.We2 = nn.Linear(2*h_feats, 2*h_feats)
+        self.We3 = nn.Linear(2*h_feats, 4*h_feats)
+        self.We4 = nn.Linear(4*h_feats, 2*out_conv_feats*h_feats)
         # self.create_MLP(h_feats, 2*h_feats, 2*(h_feats**2))
         def edge_conv_func(h):
             # print("Device:", next(self.We1.parameters()).device)
             # print("Device 2:", h.device)
             # return self.apply_MLP(h, self.We1, self.We2, self.We3, self.We4)
-            return self.We2(F.relu(self.We1(h)))
+            return self.We4(F.relu(self.We3(F.relu(self.We2(F.relu(self.We1(h)))))))
 
         self.conv1 = dglnn.SAGEConv(
                     in_feats=h_feats, out_feats=h_feats, aggregator_type='mean', feat_drop=0.25, activation=F.relu)
@@ -127,9 +129,9 @@ class AMGModel(nn.Module):
 
     def create_MLP(self, in_feats, hidden_feats, out_feats):
         W1 = nn.Linear(in_feats, hidden_feats)
-        W2 = nn.Linear(hidden_feats, 4*hidden_feats)
-        W3 = nn.Linear(4*hidden_feats, 2*hidden_feats)
-        W4 = nn.Linear(2*hidden_feats, out_feats)
+        W2 = nn.Linear(hidden_feats, 2*hidden_feats)
+        W3 = nn.Linear(2*hidden_feats, hidden_feats)
+        W4 = nn.Linear(hidden_feats, out_feats)
         return W1, W2, W3, W4
 
     def apply_MLP(self, h, W1, W2, W3, W4):
