@@ -29,7 +29,7 @@ class RunConfig:
 
 
 class TrainConfig:
-    def __init__(self, samples_per_run=2560, num_runs=50, batch_size=32, learning_rate=3e-3, fourier=False,
+    def __init__(self, samples_per_run=2560, num_runs=1, batch_size=32, learning_rate=3e-3, fourier=False,
                  coarsen=True, checkpoint_dir='../train_checkpoints', tensorboard_dir='../tensorboard_dir', load_model=False):
         self.samples_per_run = samples_per_run
         self.num_runs = num_runs
@@ -77,7 +77,12 @@ class Config:
 
 
 GRAPH_LAPLACIAN_TRAIN = Config()
-GRAPH_LAPLACIAN_TRAIN.data_config.dist = 'lognormal_laplacian_periodic'
+GRAPH_LAPLACIAN_TRAIN.data_config.dist = 'lognormal_laplacian'
+
+
+FINITE_ELEMENT_TRAIN = Config()
+FINITE_ELEMENT_TRAIN.data_config.dist = 'lognormal_complex_fem'
+# FINITE_ELEMENT_TRAIN.data_config.dist = 'poisson'
 
 
 COMPLEX_FEM_TEST = Config()

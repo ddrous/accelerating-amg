@@ -1,11 +1,11 @@
-from turtle import forward
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import dgl
 import dgl.nn as dglnn
 import dgl.function as fn
-import dgl.nn.pytorch as Sequential
+# import dgl.nn.pytorch as Sequential
+from torch.nn import Sequential, ReLU
 from dgl.data import DGLDataset
 from dgl.data.utils import save_graphs, load_graphs
 from scipy.sparse import csr_matrix
@@ -101,7 +101,7 @@ class GNblock(nn.Module):
         self.e_in = e_in
         self.e_out = n_out
         self.agg_type = aggregator_type     ## not used at the moment
-        self.activation = F.relu
+        self.activation = ReLU()
         self.latent_size_mlp = latent_size_mlp
         self.num_layers_mlp = num_layers_mlp
 
@@ -112,7 +112,12 @@ class GNblock(nn.Module):
         in_layer = nn.Linear(in_size, latent_size)
         latent_layer = nn.Linear(latent_size, latent_size)
         out_layer = nn.Linear(latent_size, out_size)
-        return Sequential([in_layer, self.activation] + [latent_layer, self.activation]*num_layers + [out_layer, self.activation])
+        # return Sequential([in_layer(), self.activation()] + [latent_layer(), self.activation()]*num_layers + [out_layer(), self.activation()])
+        list_of_layers = [in_layer, self.activation] + [latent_layer, self.activation]*num_layers + [out_layer, self.activation]
+        return Sequential(*list_of_layers)
+
+        # sageconv = dglnn.SAGEConv(in_feats=in_size, out_feats=out_size, aggregator_type='mean')
+        # return Sequential(sageconv)
 
     def process_nodes(self, nodes):
         h = torch.cat([nodes.data['h'], nodes.data['h_N']], 1)
@@ -120,18 +125,22 @@ class GNblock(nn.Module):
 
     def process_edges(self, edges):
         h = torch.cat([edges.data['h'], edges.src['h'], edges.dst['h']], 1)
+        # print("NEW SHAPES:", h.shape)
         return {'h': self.mlp_e(h)}
+
+        # mlp_e = self.make_mlp(64*3, 16, 64)
+        # return {'h': mlp_e(h)}
 
     def forward(self, g, n_feats, e_feats):
         with g.local_scope():
             g.ndata['h'], g.edata['h'] = n_feats, e_feats
 
             g.apply_edges(self.process_edges)
-            g.update_all(message_func=fn.copy_e('h', 'm'), reduce_func=fn.mean('m', 'h_N'))
+            g.update_all(message_func=fn.copy_edge('h', 'm'), reduce_func=fn.mean('m', 'h_N'))
             g.apply_nodes(self.process_nodes)
 
-        return g.ndata['h'], g.edata['h']
-
+            # print("Node data:", g.ndata.keys())
+            return g.ndata['h'], g.edata['h']
 
 
 class AMGModel(nn.Module):
@@ -146,36 +155,38 @@ class AMGModel(nn.Module):
         ## Encode edges
         self.W5, self.W6, self.W7, self.W8 = self.create_MLP(3, h_feats, h_feats)
 
-        ## Process
+        # ## Process
+        # # self.conv1 = dglnn.SAGEConv(
+        # #             in_feats=h_feats, out_feats=h_feats, aggregator_type='mean', dropout=0.25, activation=F.relu)
+        # # self.conv2 = dglnn.SAGEConv(
+        # #             in_feats=2*h_feats, out_feats=h_feats, aggregator_type='mean', dropout=0.25, activation=F.relu)
+        # # self.conv3 = dglnn.SAGEConv(
+        # #             in_feats=2*h_feats, out_feats=h_feats, aggregator_type='mean')
+
+        # self.We1 = nn.Linear(h_feats, 2*h_feats)
+        # self.We2 = nn.Linear(2*h_feats, 2*h_feats)
+        # self.We3 = nn.Linear(2*h_feats, 4*h_feats)
+        # self.We4 = nn.Linear(4*h_feats, 2*out_conv_feats*h_feats)
+        # # self.create_MLP(h_feats, 2*h_feats, 2*(h_feats**2))
+        # def edge_conv_func(h):
+        #     # print("Device:", next(self.We1.parameters()).device)
+        #     # print("Device 2:", h.device)
+        #     # return self.apply_MLP(h, self.We1, self.We2, self.We3, self.We4)
+        #     return self.We4(F.relu(self.We3(F.relu(self.We2(F.relu(self.We1(h)))))))
+
         # self.conv1 = dglnn.SAGEConv(
-        #             in_feats=h_feats, out_feats=h_feats, aggregator_type='mean', dropout=0.25, activation=F.relu)
-        # self.conv2 = dglnn.SAGEConv(
-        #             in_feats=2*h_feats, out_feats=h_feats, aggregator_type='mean', dropout=0.25, activation=F.relu)
-        # self.conv3 = dglnn.SAGEConv(
-        #             in_feats=2*h_feats, out_feats=h_feats, aggregator_type='mean')
-
-        self.We1 = nn.Linear(h_feats, 2*h_feats)
-        self.We2 = nn.Linear(2*h_feats, 2*h_feats)
-        self.We3 = nn.Linear(2*h_feats, 4*h_feats)
-        self.We4 = nn.Linear(4*h_feats, 2*out_conv_feats*h_feats)
-        # self.create_MLP(h_feats, 2*h_feats, 2*(h_feats**2))
-        def edge_conv_func(h):
-            # print("Device:", next(self.We1.parameters()).device)
-            # print("Device 2:", h.device)
-            # return self.apply_MLP(h, self.We1, self.We2, self.We3, self.We4)
-            return self.We4(F.relu(self.We3(F.relu(self.We2(F.relu(self.We1(h)))))))
-
-        self.conv1 = dglnn.SAGEConv(
-                    in_feats=h_feats, out_feats=h_feats, aggregator_type='mean', feat_drop=0.25, activation=F.relu)
-        self.conv2 = dglnn.NNConv(
-                    in_feats=2*h_feats, out_feats=out_conv_feats, edge_func=edge_conv_func, aggregator_type='mean')
-        # self.conv3 = dglnn.SAGEConv(
-        #             in_feats=2*h_feats, out_feats=h_feats, aggregator_type='mean', activation=F.relu)
+        #             in_feats=h_feats, out_feats=h_feats, aggregator_type='mean', feat_drop=0.25, activation=F.relu)
+        # self.conv2 = dglnn.NNConv(
+        #             in_feats=2*h_feats, out_feats=out_conv_feats, edge_func=edge_conv_func, aggregator_type='mean')
+        # # self.conv3 = dglnn.SAGEConv(
+        # #             in_feats=2*h_feats, out_feats=h_feats, aggregator_type='mean', activation=F.relu)
 
         self.conv3 = GNblock(n_in=64, n_out=64, e_in=64, e_out=64)
+        self.conv4 = GNblock(n_in=64, n_out=64, e_in=64, e_out=64)
+        self.conv5 = GNblock(n_in=64, n_out=64, e_in=64, e_out=64)
 
         ## Decode edges
-        self.W9, self.W10, self.W11, self.W12 = self.create_MLP(2*out_conv_feats, h_feats//2, 1)    ## Concat source and dest before doing this
+        self.W9, self.W10, self.W11, self.W12 = self.create_MLP(64*3, 64, 1)    ## Concat source and dest before doing this
 
     def create_MLP(self, in_feats, hidden_feats, out_feats):
         W1 = nn.Linear(in_feats, hidden_feats)
@@ -196,7 +207,8 @@ class AMGModel(nn.Module):
         return {'edge_encs': self.apply_MLP(h, self.W5, self.W6, self.W7, self.W8)}
 
     def decode_edges(self, edges):
-        h = torch.cat([edges.src['h'], edges.dst['h']], 1)          ##Key here
+        h = torch.cat([edges.data['h'], edges.src['h'], edges.dst['h']], 1)          ##Key here
+        # h = torch.cat([edges.src['h'], edges.dst['h']], 1)          ##Key here
         # return {'P': self.W10(F.relu(self.W9(h))).squeeze(1)}
         return {'P': self.apply_MLP(h, self.W9, self.W10, self.W11, self.W12).squeeze(1)}
 
@@ -213,21 +225,25 @@ class AMGModel(nn.Module):
             n_encs = g.ndata['node_encs']
             e_encs = g.edata['edge_encs']
 
-            h = self.conv1(g, n_encs, edge_weight=e_encs)
-            # h = F.relu(h)
+            # h = self.conv1(g, n_encs, edge_weight=e_encs)
+            # # h = F.relu(h)
 
-            h = torch.cat([h, n_encs], 1)
-            # h = self.conv2(g, h, edge_weight=e_encs)
-            h = self.conv2(g, h, efeat=e_encs)
-            # h = F.relu(h)
+            # h = torch.cat([h, n_encs], 1)
+            # # h = self.conv2(g, h, edge_weight=e_encs)
+            # h = self.conv2(g, h, efeat=e_encs)
+            # # h = F.relu(h)
             
-            h_n, h_e = self.conv3(g, h, e_encs)
+            # print("SHAPES:", h.shape, e_encs.shape)
+            h_n, h_e = self.conv3(g, n_encs, e_encs)
+            h_n, h_e = self.conv3(g, h_n, h_e)
+            h_n, h_e = self.conv3(g, h_n, h_e)
 
             # h = torch.cat([h, n_encs], 1)
             # h = self.conv3(g, h, edge_weight=e_encs)
 
             ## Decode edges
-            g.ndata['h'] = h
+            g.ndata['h'] = h_n
+            g.edata['h'] = h_e
             g.apply_edges(self.decode_edges)
 
 

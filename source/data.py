@@ -45,8 +45,8 @@ def generate_A(size, dist, block_periodic, root_num_blocks, add_diag=False, matl
 def drop_zero_row_col_matlab(A, matlab_engine):
     size = A.shape[0]
     A_coo = A.tocoo()
-    A_rows = matlab.double((A_coo.row + 1))
-    A_cols = matlab.double((A_coo.col + 1))
+    A_rows = matlab.double((np.double(A_coo.row) + 1))
+    A_cols = matlab.double((np.double(A_coo.col) + 1))
     A_values = matlab.double(A_coo.data)
     rows, cols, values = matlab_engine.drop_zero_row_col(A_rows, A_cols, A_values, size, nargout=3)
     rows = np.array(rows._data).reshape(rows.size, order='F') - 1
@@ -461,14 +461,14 @@ def drop_row_col_matlab(A, indices, matlab_engine):
 
 
 if __name__ == "__main__":
-
     import configs
     import matlab.engine
     np.set_printoptions(precision=2)
 
     matlab_engine = matlab.engine.start_matlab()
     # matlab_engine = None
-    config = configs.GRAPH_LAPLACIAN_TRAIN_CREATE_DATA
+    # config = configs.GRAPH_LAPLACIAN_TRAIN
+    config = configs.FINITE_ELEMENT_TRAIN
 
     data_config = config.data_config
     num_As = 2
@@ -481,5 +481,5 @@ if __name__ == "__main__":
                         matlab_engine=matlab_engine) for _ in range(num_As)]
 
     view=10
-    print(As[0].todense()[:view, :view].view())
+    print(As[1].todense()[:view, :view].view())
     print(As[0][0].sum())
