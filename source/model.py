@@ -1,8 +1,11 @@
+from turtle import forward
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import dgl
 import dgl.nn as dglnn
+import dgl.function as fn
+import dgl.nn.pytorch as Sequential
 from dgl.data import DGLDataset
 from dgl.data.utils import save_graphs, load_graphs
 from scipy.sparse import csr_matrix
@@ -86,6 +89,51 @@ class AMGDataset(DGLDataset):
     def __len__(self):
         return self.num_graphs
 
+
+class GNblock(nn.Module):
+    """
+    Graph Network block as described by Battaglia et al. (2018)
+    """
+    def __init__(self, n_in=64, n_out=64, e_in=64, e_out=64, aggregator_type='mean', latent_size_mlp=16, num_layers_mlp=2, activation=F.relu):
+        super().__init__()
+        self.n_in = n_in
+        self.n_out = n_out
+        self.e_in = e_in
+        self.e_out = n_out
+        self.agg_type = aggregator_type     ## not used at the moment
+        self.activation = F.relu
+        self.latent_size_mlp = latent_size_mlp
+        self.num_layers_mlp = num_layers_mlp
+
+        self.mlp_e = self.make_mlp(e_in+n_in*2, latent_size_mlp, e_out)
+        self.mlp_n = self.make_mlp(n_in*2, latent_size_mlp, n_out)
+
+    def make_mlp(self, in_size, latent_size, out_size, num_layers=2):
+        in_layer = nn.Linear(in_size, latent_size)
+        latent_layer = nn.Linear(latent_size, latent_size)
+        out_layer = nn.Linear(latent_size, out_size)
+        return Sequential([in_layer, self.activation] + [latent_layer, self.activation]*num_layers + [out_layer, self.activation])
+
+    def process_nodes(self, nodes):
+        h = torch.cat([nodes.data['h'], nodes.data['h_N']], 1)
+        return {'h': self.mlp_n(h)}
+
+    def process_edges(self, edges):
+        h = torch.cat([edges.data['h'], edges.src['h'], edges.dst['h']], 1)
+        return {'h': self.mlp_e(h)}
+
+    def forward(self, g, n_feats, e_feats):
+        with g.local_scope():
+            g.ndata['h'], g.edata['h'] = n_feats, e_feats
+
+            g.apply_edges(self.process_edges)
+            g.update_all(message_func=fn.copy_e('h', 'm'), reduce_func=fn.mean('m', 'h_N'))
+            g.apply_nodes(self.process_nodes)
+
+        return g.ndata['h'], g.edata['h']
+
+
+
 class AMGModel(nn.Module):
     def __init__(self, model_config):
         super().__init__()
@@ -123,6 +171,8 @@ class AMGModel(nn.Module):
                     in_feats=2*h_feats, out_feats=out_conv_feats, edge_func=edge_conv_func, aggregator_type='mean')
         # self.conv3 = dglnn.SAGEConv(
         #             in_feats=2*h_feats, out_feats=h_feats, aggregator_type='mean', activation=F.relu)
+
+        self.conv3 = GNblock(n_in=64, n_out=64, e_in=64, e_out=64)
 
         ## Decode edges
         self.W9, self.W10, self.W11, self.W12 = self.create_MLP(2*out_conv_feats, h_feats//2, 1)    ## Concat source and dest before doing this
@@ -171,6 +221,8 @@ class AMGModel(nn.Module):
             h = self.conv2(g, h, efeat=e_encs)
             # h = F.relu(h)
             
+            h_n, h_e = self.conv3(g, h, e_encs)
+
             # h = torch.cat([h, n_encs], 1)
             # h = self.conv3(g, h, edge_weight=e_encs)
 
