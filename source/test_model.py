@@ -11,6 +11,8 @@ from model import get_model
 from prolongation_functions import model, baseline
 from ruge_stuben_custom_solver import ruge_stuben_custom_solver
 
+## To see all the residuals
+np.set_printoptions(precision=3)
 
 def test_size(model_name, graph_model, size, test_config, run_config):
     model_prolongation = partial(model, graph_model=graph_model,

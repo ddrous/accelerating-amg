@@ -480,6 +480,7 @@ if __name__ == "__main__":
                         add_diag=data_config.add_diag,
                         matlab_engine=matlab_engine) for _ in range(num_As)]
 
-    view=10
-    print(As[1].todense()[:view, :view].view())
+    start=10
+    end=20
+    print(As[1].todense()[start:end, start:end].view())
     print(As[0][0].sum())

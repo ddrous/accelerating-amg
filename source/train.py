@@ -20,7 +20,7 @@ from tqdm import tqdm
 import configs
 from data import generate_A
 from dataset import DataSet
-from model import AMGModel, dgl_graph_to_sparse_matrices, to_prolongation_matrix_tensor, AMGDataset
+from model import AMGModel, EncodeProcessDecode, dgl_graph_to_sparse_matrices, to_prolongation_matrix_tensor, AMGDataset
 from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
     two_grid_error_matrix, compute_coarse_A, P_square_sparsity_pattern, normalizing_loss, negative_loss, spectral_loss
 from relaxation import relaxation_matrices
@@ -167,16 +167,17 @@ def loss(dataset, P_graphs_dgl, run_config, train_config, data_config):
             # frob_loss = spectral_loss(M)
 
             ## A loss function to enforce the row-wize sum = 1
-            # true_or_false = torch.as_tensor(run_config.normalize_rows, dtype=P.dtype)
+            true_or_false = torch.as_tensor(run_config.normalize_rows, dtype=P.dtype)
             norm_loss, P_normed = normalizing_loss(P_unnormed)
-            # norm_loss = norm_loss * true_or_false
-            norm_loss = 0
+            norm_loss = norm_loss * true_or_false
+            # norm_loss = 0
 
             neg_loss = negative_loss(P_unnormed)
-            neg_loss = 0
+            # neg_loss = 0
 
             eps = 1
             total_norm = total_norm + (eps)*frob_loss + (1)*norm_loss + (1)*neg_loss
+            # total_norm = total_norm + frob_loss
 
     return total_norm / batch_size, M  # M is chosen randomly - the last in the batch
 
@@ -230,9 +231,11 @@ def train_run(run_dataset, run, batch_size, config,
         total_loss.backward()
         optimizer.step()
 
+        print("CHECK THIS, ZERO?:", optimizer.param_groups[0]['params'][0].grad) ## Verify the grad is not zero
+
         nb_iter_batch[0] += 1
 
-        variables = model.named_parameters()
+        variables = model.named_parameters()        ## TO-DO .. fix this !
 
         if tb_writer is not None:
             record_tb(M, run, num_As, batch, batch_size, total_loss.item(), loop, model,
@@ -270,8 +273,10 @@ def record_tb_params(batch_size, loop, variables, iter_nb, tb_writer):
         tb_writer.add_scalar('seconds_per_batch', torch.as_tensor(avg_time), iter_nb)
 
     for name, var in variables:
+        print("What is this params?", var)
         variable = var.data
         grad = var.grad
+        print("And now the grad?", grad)
         variable_name = name
 
         if grad is not None:
@@ -401,7 +406,9 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='FINITE_ELEMENT_TEST', see
         raise NotImplementedError()
     else:
         model = AMGModel(config.model_config)
+        # model = EncodeProcessDecode(config.model_config)
         model = model.to(device)
+        print('\nMODEL INFO:', model.parameters)
         optimizer = torch.optim.Adam(model.parameters(), lr=config.train_config.learning_rate)
         # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.95, patience=100, min_lr=1e-6)

@@ -92,6 +92,7 @@ COMPLEX_FEM_TEST.test_config.fp_threshold = 0
 
 FINITE_ELEMENT_TEST = Config()
 # FINITE_ELEMENT_TEST.data_config.dist = 'lognormal_laplacian'
+FINITE_ELEMENT_TEST.data_config.dist = 'lognormal_complex_fem'
 FINITE_ELEMENT_TEST.test_config.test_sizes = (1024, 2048)
 
 

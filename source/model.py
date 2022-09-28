@@ -143,6 +143,69 @@ class GNblock(nn.Module):
             return g.ndata['h'], g.edata['h']
 
 
+class EncodeProcessDecode(nn.Module):
+    def __init__(self, model_config):
+        super().__init__()
+        h_feats = model_config.latent_size
+        # self.activation = ReLU()
+
+        self.mlp_enc_n = self.make_mlp(2, 16, 64, num_layers=2)
+        self.mlp_enc_e = self.make_mlp(3, 16, 64, num_layers=2)
+
+        self.conv1 = GNblock(n_in=64, n_out=64, e_in=64, e_out=64)
+        # self.conv2 = GNblock(n_in=64, n_out=64, e_in=64, e_out=64)
+        self.conv3 = GNblock(n_in=64, n_out=64, e_in=64, e_out=64)
+
+        ## Decode edges
+        self.mlp_dec = self.make_mlp(64*3, 64, 1, num_layers=2)
+
+    def make_mlp(self, in_size, latent_size, out_size, num_layers=2):
+        in_layer = nn.Linear(in_size, latent_size)
+        latent_layer = nn.Linear(latent_size, latent_size)
+        out_layer = nn.Linear(latent_size, out_size)
+        list_of_layers = [in_layer, ReLU()] + [latent_layer, ReLU()]*num_layers + [out_layer, ReLU()]
+        return Sequential(*list_of_layers)
+
+    def encode_nodes(self, nodes):
+        h = torch.cat([nodes.data['C'], nodes.data['F']], 1)
+        return {'node_encs': self.mlp_enc_n(h)}
+
+    def encode_edges(self, edges):
+        h = torch.cat([edges.data['A'], edges.data['SP1'], edges.data['SP0']], 1)
+        return {'edge_encs': self.mlp_enc_e(h)}
+
+    def decode_edges(self, edges):
+        h = torch.cat([edges.data['h'], edges.src['h'], edges.dst['h']], 1)
+        return {'P': self.mlp_dec(h).squeeze(1)}
+
+    def forward(self, g):
+        with g.local_scope():
+
+            ## Encode nodes
+            g.apply_nodes(self.encode_nodes)
+
+            ## Encode edges
+            g.apply_edges(self.encode_edges)
+
+            ## Message passing
+            n_encs = g.ndata['node_encs']
+            e_encs = g.edata['edge_encs']
+            h_n, h_e = self.conv1(g, n_encs, e_encs)
+            # h_n, h_e = self.conv2(g, h_n, h_e)
+            h_n, h_e = self.conv3(g, h_n, h_e)
+
+            ## Decode edges
+            g.ndata['h'] = h_n
+            g.edata['h'] = h_e
+            g.apply_edges(self.decode_edges)
+
+            P = g.edata['P']
+
+        g.edata['P'] = P
+        return g
+
+
+
 class AMGModel(nn.Module):
     def __init__(self, model_config):
         super().__init__()
@@ -155,38 +218,40 @@ class AMGModel(nn.Module):
         ## Encode edges
         self.W5, self.W6, self.W7, self.W8 = self.create_MLP(3, h_feats, h_feats)
 
-        # ## Process
-        # # self.conv1 = dglnn.SAGEConv(
-        # #             in_feats=h_feats, out_feats=h_feats, aggregator_type='mean', dropout=0.25, activation=F.relu)
-        # # self.conv2 = dglnn.SAGEConv(
-        # #             in_feats=2*h_feats, out_feats=h_feats, aggregator_type='mean', dropout=0.25, activation=F.relu)
-        # # self.conv3 = dglnn.SAGEConv(
-        # #             in_feats=2*h_feats, out_feats=h_feats, aggregator_type='mean')
-
-        # self.We1 = nn.Linear(h_feats, 2*h_feats)
-        # self.We2 = nn.Linear(2*h_feats, 2*h_feats)
-        # self.We3 = nn.Linear(2*h_feats, 4*h_feats)
-        # self.We4 = nn.Linear(4*h_feats, 2*out_conv_feats*h_feats)
-        # # self.create_MLP(h_feats, 2*h_feats, 2*(h_feats**2))
-        # def edge_conv_func(h):
-        #     # print("Device:", next(self.We1.parameters()).device)
-        #     # print("Device 2:", h.device)
-        #     # return self.apply_MLP(h, self.We1, self.We2, self.We3, self.We4)
-        #     return self.We4(F.relu(self.We3(F.relu(self.We2(F.relu(self.We1(h)))))))
-
+        ## Process
         # self.conv1 = dglnn.SAGEConv(
-        #             in_feats=h_feats, out_feats=h_feats, aggregator_type='mean', feat_drop=0.25, activation=F.relu)
-        # self.conv2 = dglnn.NNConv(
-        #             in_feats=2*h_feats, out_feats=out_conv_feats, edge_func=edge_conv_func, aggregator_type='mean')
-        # # self.conv3 = dglnn.SAGEConv(
-        # #             in_feats=2*h_feats, out_feats=h_feats, aggregator_type='mean', activation=F.relu)
+        #             in_feats=h_feats, out_feats=h_feats, aggregator_type='mean', dropout=0.25, activation=F.relu)
+        # self.conv2 = dglnn.SAGEConv(
+        #             in_feats=2*h_feats, out_feats=h_feats, aggregator_type='mean', dropout=0.25, activation=F.relu)
+        # self.conv3 = dglnn.SAGEConv(
+        #             in_feats=2*h_feats, out_feats=h_feats, aggregator_type='mean')
 
-        self.conv3 = GNblock(n_in=64, n_out=64, e_in=64, e_out=64)
-        self.conv4 = GNblock(n_in=64, n_out=64, e_in=64, e_out=64)
-        self.conv5 = GNblock(n_in=64, n_out=64, e_in=64, e_out=64)
+        self.We1 = nn.Linear(h_feats, 2*h_feats)
+        self.We2 = nn.Linear(2*h_feats, 2*h_feats)
+        self.We3 = nn.Linear(2*h_feats, 4*h_feats)
+        self.We4 = nn.Linear(4*h_feats, 2*out_conv_feats*h_feats)
+        # self.create_MLP(h_feats, 2*h_feats, 2*(h_feats**2))
+        def edge_conv_func(h):
+            # print("Device:", next(self.We1.parameters()).device)
+            # print("Device 2:", h.device)
+            # return self.apply_MLP(h, self.We1, self.We2, self.We3, self.We4)
+            return self.We4(F.relu(self.We3(F.relu(self.We2(F.relu(self.We1(h)))))))
+
+        self.conv1 = dglnn.SAGEConv(
+                    in_feats=h_feats, out_feats=h_feats, aggregator_type='mean', feat_drop=0.25, activation=F.relu)
+        self.conv2 = dglnn.NNConv(
+                    in_feats=2*h_feats, out_feats=out_conv_feats, edge_func=edge_conv_func, aggregator_type='mean')
+        # self.conv3 = dglnn.SAGEConv(
+        #             in_feats=2*h_feats, out_feats=h_feats, aggregator_type='mean', activation=F.relu)
 
         ## Decode edges
-        self.W9, self.W10, self.W11, self.W12 = self.create_MLP(64*3, 64, 1)    ## Concat source and dest before doing this
+        self.W9, self.W10, self.W11, self.W12 = self.create_MLP(2*out_conv_feats, h_feats//2, 1)    ## Concat source and dest before doing this
+
+
+        #### Test MLP
+        self.test_mlp_1 = self.make_mlp(2, h_feats, h_feats)                  #### TO-DO delete this
+        # self.test_mlp_2 = self.make_mlp(3, h_feats, h_feats)                  #### TO-DO delete this
+        self.test_mlp_3 = self.make_mlp(2*out_conv_feats, h_feats//2, 1)                  #### TO-DO delete this
 
     def create_MLP(self, in_feats, hidden_feats, out_feats):
         W1 = nn.Linear(in_feats, hidden_feats)
@@ -195,22 +260,33 @@ class AMGModel(nn.Module):
         W4 = nn.Linear(hidden_feats, out_feats)
         return W1, W2, W3, W4
 
+
+    def make_mlp(self, in_size, latent_size, out_size, num_layers=2):
+        in_layer = nn.Linear(in_size, latent_size)
+        latent_layer = nn.Linear(latent_size, latent_size)
+        out_layer = nn.Linear(latent_size, out_size)
+        list_of_layers = [in_layer, ReLU()] + [latent_layer, ReLU()]*num_layers + [out_layer, ReLU()]
+        return Sequential(*list_of_layers)
+
+
     def apply_MLP(self, h, W1, W2, W3, W4):
         return W4(F.relu(W3(F.relu(W2(F.relu(W1(h)))))))
 
     def encode_nodes(self, nodes):
         h = torch.cat([nodes.data['C'], nodes.data['F']], 1)
-        return {'node_encs': self.apply_MLP(h, self.W1, self.W2, self.W3, self.W4)}
+        return {'node_encs': self.test_mlp_1(h)}
+        # return {'node_encs': self.apply_MLP(h, self.W1, self.W2, self.W3, self.W4)}
 
     def encode_edges(self, edges):
         h = torch.cat([edges.data['A'], edges.data['SP1'], edges.data['SP0']], 1)
+        # return {'edge_encs': self.test_mlp_2(h)}
         return {'edge_encs': self.apply_MLP(h, self.W5, self.W6, self.W7, self.W8)}
 
     def decode_edges(self, edges):
-        h = torch.cat([edges.data['h'], edges.src['h'], edges.dst['h']], 1)          ##Key here
-        # h = torch.cat([edges.src['h'], edges.dst['h']], 1)          ##Key here
+        h = torch.cat([edges.src['h'], edges.dst['h']], 1)          ##Key here
         # return {'P': self.W10(F.relu(self.W9(h))).squeeze(1)}
-        return {'P': self.apply_MLP(h, self.W9, self.W10, self.W11, self.W12).squeeze(1)}
+        return {'P': self.test_mlp_3(h).squeeze(1)}
+        # return {'P': self.apply_MLP(h, self.W9, self.W10, self.W11, self.W12).squeeze(1)}
 
     def forward(self, g):
         with g.local_scope():
@@ -225,25 +301,19 @@ class AMGModel(nn.Module):
             n_encs = g.ndata['node_encs']
             e_encs = g.edata['edge_encs']
 
-            # h = self.conv1(g, n_encs, edge_weight=e_encs)
-            # # h = F.relu(h)
+            h = self.conv1(g, n_encs, edge_weight=e_encs)
+            # h = F.relu(h)
 
-            # h = torch.cat([h, n_encs], 1)
-            # # h = self.conv2(g, h, edge_weight=e_encs)
-            # h = self.conv2(g, h, efeat=e_encs)
-            # # h = F.relu(h)
+            h = torch.cat([h, n_encs], 1)
+            # h = self.conv2(g, h, edge_weight=e_encs)
+            h = self.conv2(g, h, efeat=e_encs)
+            # h = F.relu(h)
             
-            # print("SHAPES:", h.shape, e_encs.shape)
-            h_n, h_e = self.conv3(g, n_encs, e_encs)
-            h_n, h_e = self.conv3(g, h_n, h_e)
-            h_n, h_e = self.conv3(g, h_n, h_e)
-
             # h = torch.cat([h, n_encs], 1)
             # h = self.conv3(g, h, edge_weight=e_encs)
 
             ## Decode edges
-            g.ndata['h'] = h_n
-            g.edata['h'] = h_e
+            g.ndata['h'] = h
             g.apply_edges(self.decode_edges)
 
 
@@ -257,6 +327,7 @@ class AMGModel(nn.Module):
         # else:
         g.edata['P'] = P
         return g
+
 
 
 def dgl_graph_to_sparse_matrices(dgl_graph, val_feature='P', return_nodes=False):
