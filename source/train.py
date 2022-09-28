@@ -231,7 +231,7 @@ def train_run(run_dataset, run, batch_size, config,
         total_loss.backward()
         optimizer.step()
 
-        print("CHECK THIS, ZERO?:", optimizer.param_groups[0]['params'][0].grad) ## Verify the grad is not zero
+        # print("CHECK THIS, ZERO?:", optimizer.param_groups[0]['params'][0].grad) ## Verify the grad is not zero
 
         nb_iter_batch[0] += 1
 
@@ -273,10 +273,10 @@ def record_tb_params(batch_size, loop, variables, iter_nb, tb_writer):
         tb_writer.add_scalar('seconds_per_batch', torch.as_tensor(avg_time), iter_nb)
 
     for name, var in variables:
-        print("What is this params?", var)
+        # print("What is this params?", var)
         variable = var.data
         grad = var.grad
-        print("And now the grad?", grad)
+        # print("And now the grad?", grad)
         variable_name = name
 
         if grad is not None:
@@ -408,7 +408,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='FINITE_ELEMENT_TEST', see
         model = AMGModel(config.model_config)
         # model = EncodeProcessDecode(config.model_config)
         model = model.to(device)
-        print('\nMODEL INFO:', model.parameters)
+        # print('\nMODEL INFO:', model.parameters)
         optimizer = torch.optim.Adam(model.parameters(), lr=config.train_config.learning_rate)
         # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.95, patience=100, min_lr=1e-6)
