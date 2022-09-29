@@ -39,3 +39,6 @@ __pycache__/*
 source/results/*
 source/tb_dir/*
 source/__pycache__/*
+
+## AWS stuff
+nohup.out

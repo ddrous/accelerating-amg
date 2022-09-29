@@ -97,8 +97,10 @@ FINITE_ELEMENT_TEST.test_config.test_sizes = (1024, 2048)
 
 
 GRAPH_LAPLACIAN_TEST = Config()
-GRAPH_LAPLACIAN_TEST.data_config.dist = 'lognormal_laplacian_periodic'
-GRAPH_LAPLACIAN_TEST.test_config.test_sizes = (1024, 2048, 4096, 8192)
+GRAPH_LAPLACIAN_TEST.data_config.dist = 'lognormal_laplacian'
+# GRAPH_LAPLACIAN_TEST.data_config.dist = 'lognormal_laplacian_periodic'
+# GRAPH_LAPLACIAN_TEST.test_config.test_sizes = (1024, 2048, 4096, 8192)
+GRAPH_LAPLACIAN_TEST.test_config.test_sizes = (16384, 32768)
 
 GRAPH_LAPLACIAN_RS_TEST = Config()
 GRAPH_LAPLACIAN_RS_TEST.test_config.splitting = 'RS'

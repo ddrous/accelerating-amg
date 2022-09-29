@@ -163,8 +163,8 @@ def loss(dataset, P_graphs_dgl, run_config, train_config, data_config):
             M = two_grid_error_matrix(A, P, R, S)
 
             ## A loss fucntion to minimize the frobenius norm
-            frob_loss = frob_norm(M)
-            # frob_loss = spectral_loss(M)
+            # frob_loss = frob_norm(M)
+            frob_loss = spectral_loss(M)
 
             ## A loss function to enforce the row-wize sum = 1
             true_or_false = torch.as_tensor(run_config.normalize_rows, dtype=P.dtype)
@@ -405,8 +405,8 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='FINITE_ELEMENT_TEST', see
     if config.train_config.load_model:
         raise NotImplementedError()
     else:
-        model = AMGModel(config.model_config)
-        # model = EncodeProcessDecode(config.model_config)
+        # model = AMGModel(config.model_config)
+        model = EncodeProcessDecode(config.model_config)
         model = model.to(device)
         # print('\nMODEL INFO:', model.parameters)
         optimizer = torch.optim.Adam(model.parameters(), lr=config.train_config.learning_rate)
