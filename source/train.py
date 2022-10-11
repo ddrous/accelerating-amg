@@ -164,7 +164,7 @@ def loss(dataset, P_graphs_dgl, run_config, train_config, data_config):
 
             ## A loss fucntion to minimize the frobenius norm
             # frob_loss = frob_norm(M)
-            frob_loss = spectral_loss(M)
+            spec_loss = spectral_loss(M)
 
             ## A loss function to enforce the row-wize sum = 1
             true_or_false = torch.as_tensor(run_config.normalize_rows, dtype=P.dtype)
@@ -175,8 +175,8 @@ def loss(dataset, P_graphs_dgl, run_config, train_config, data_config):
             neg_loss = negative_loss(P_unnormed)
             # neg_loss = 0
 
-            eps = 1
-            total_norm = total_norm + (eps)*frob_loss + (1)*norm_loss + (1)*neg_loss
+            total_norm = total_norm + spec_loss + (1)*norm_loss + (1)*neg_loss
+            # total_norm = total_norm + frob_loss + spec_loss + (1)*norm_loss + (1)*neg_loss
             # total_norm = total_norm + frob_loss
 
     return total_norm / batch_size, M  # M is chosen randomly - the last in the batch

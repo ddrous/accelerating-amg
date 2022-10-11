@@ -449,7 +449,8 @@ def load_model(checkpoint_dir, model_config, train_config):
 
     checkpoint = torch.load(checkpoint_dir + '/gnn_checkpoints.pth')
 
-    model = AMGModel(model_config)
+    # model = AMGModel(model_config)
+    model = EncodeProcessDecode(model_config)
     model = model.to(device)
     model.load_state_dict(checkpoint['model_state_dict'])
 

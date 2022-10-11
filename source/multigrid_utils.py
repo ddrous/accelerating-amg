@@ -27,7 +27,9 @@ def spectral_loss(A):
     """
     Computes the spectral radius 
     """
-    return torch.abs(torch.linalg.eigvals(torch.as_tensor(A))).max()
+    # return torch.abs(torch.linalg.eigvals(torch.as_tensor(A))).max()
+    u, s, v = torch.svd(torch.as_tensor(A))
+    return torch.max(s)
 
 def normalizing_loss(P):
     """
