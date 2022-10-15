@@ -1,7 +1,7 @@
 class DataConfig:
     def __init__(self, dist='lognormal_laplacian_periodic', block_periodic=True,
                  num_unknowns=8 ** 2, root_num_blocks=4, splitting='CLJP', add_diag=False,
-                 load_data=False, save_data=False):
+                 load_data=False, save_data=True):
         self.dist = dist  # see function 'generate_A()' for possible distributions
         self.block_periodic = block_periodic
         self.num_unknowns = num_unknowns
@@ -32,7 +32,7 @@ class RunConfig:
 class TestConfig:
     def __init__(self, dist='lognormal_laplacian_periodic', splitting='CLJP',
                  test_sizes=(1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072),
-                 load_data=True, num_runs=100, cycle='W',
+                 load_data=False, num_runs=100, cycle='W',
                  max_levels=12, iterations=81, fp_threshold=1e-10, strength=('classical', {'theta': 0.25}),
                  presmoother=('gauss_seidel', {'sweep': 'forward', 'iterations': 1}),
                  postsmoother=('gauss_seidel', {'sweep': 'forward', 'iterations': 1}),
@@ -54,7 +54,7 @@ class TestConfig:
 
 
 class TrainConfig:
-    def __init__(self, samples_per_run=256, num_runs=1, batch_size=32, learning_rate=3e-3, fourier=True,
+    def __init__(self, samples_per_run=256, num_runs=5, batch_size=32, learning_rate=3e-3, fourier=True,
                  coarsen=False, checkpoint_dir='./training_dir', tensorboard_dir='./tb_dir', load_model=False):
         self.samples_per_run = samples_per_run
         self.num_runs = num_runs
@@ -81,6 +81,7 @@ GRAPH_LAPLACIAN_TEST = Config()
 COMPLEX_FEM_TEST = Config()
 COMPLEX_FEM_TEST.test_config.dist = 'lognormal_complex_fem'
 COMPLEX_FEM_TEST.test_config.fp_threshold = 0
+COMPLEX_FEM_TEST.test_config.test_sizes=(1024, 2048, 4096, 8192)
 
 GRAPH_LAPLACIAN_RS_TEST = Config()
 GRAPH_LAPLACIAN_RS_TEST.test_config.splitting = 'RS'

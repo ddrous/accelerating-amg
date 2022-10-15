@@ -17,6 +17,23 @@ https://arxiv.org/abs/2003.05744
  * Meshpy: https://documen.tician.de/meshpy/index.html
  
 
+## Steps to run this code as is (on AWS)
+- Create a CloudFormation stack with the [Matlab 2019b template](https://github.com/mathworks-ref-arch/matlab-on-aws/blob/master/releases/R2019b/README.md). Follow [this video tutorial](https://uk.mathworks.com/videos/how-to-run-matlab-in-the-cloud-with-amazon-web-services-1542634996553.html?requestedDomain=)
+- Connect to the resulting EC2 instance with ssh with GUI formarding (`-X` or `-Y`)
+- Activate Matlab by running its activation script (in `usr/local/matlab/bin/activate_matlab.sh`)
+- Install [Matlab Engine for Python](https://uk.mathworks.com/help/matlab/matlab_external/install-the-matlab-engine-for-python.html) (upgrade `pip` if necessary). Fix the bug to pass Numpy arrays directly to Matlab from [here](https://stackoverflow.com/a/45290997) 
+- Install all other dependencies (Pyamg, Fire, Scikit-Learn, Meshpy, etc.), always downgrade to the first version released in 2020 if errors occurre (`pip install xx==`)
+- Install Nvidia drivers if not already present (check installation by running `nvidia-smi`). Refer to requirements files for version details 
+- Install miniconda
+```
+curl https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -o Miniconda3-latest-Linux-x86_64.sh
+bash Miniconda3-latest-Linux-x86_64.sh
+```
+- Create new conda environment. Use the `requirements.txt` file to replicate our environment
+- Install [tensorflow 1.15](https://www.pugetsystems.com/labs/hpc/How-To-Install-TensorFlow-1-15-for-NVIDIA-RTX30-GPUs-without-docker-or-CUDA-install-2005/) from nvidia wheels with multi-gpu support 
+- Downgrade tqdm to 4.40.2. In fact install all libs in `requirements_pip_in_conda.text` using pip
+
+
 ## Training
 ### Graph Laplacian
 ```
