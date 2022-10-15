@@ -21,6 +21,8 @@ from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two
 from relaxation import relaxation_matrices
 from utils import create_results_dir, write_config_file, most_frequent_splitting, chunks
 
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 
 def create_dataset(num_As, data_config, run=0, matlab_engine=None):
     if data_config.load_data:
@@ -323,7 +325,7 @@ def create_coarse_dataset(fine_dataset, model, data_config, run_config, matlab_e
     return create_dataset_from_As(As, data_config)
 
 
-def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', seed=1):
+def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_TEST', seed=1):
     config = getattr(configs, config)
     eval_config = getattr(configs, eval_config)
     eval_config.run_config = config.run_config
@@ -338,7 +340,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
     batch_size = min(config.train_config.samples_per_run, config.train_config.batch_size)
 
     # we measure the performance of the model over time on one larger instance that is not optimized for
-    eval_dataset = create_dataset(1, eval_config.data_config)
+    eval_dataset = create_dataset(1, eval_config.data_config, matlab_engine=matlab_engine)
     eval_A_graphs_tuple = csrs_to_graphs_tuple(eval_dataset.As, matlab_engine,
                                                coarse_nodes_list=eval_dataset.coarse_nodes_list,
                                                baseline_P_list=eval_dataset.baseline_P_list,
@@ -406,8 +408,10 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
 
 
 if __name__ == '__main__':
-    tf_config = tf.ConfigProto()
+    tf_config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=True)
     tf_config.gpu_options.allow_growth = True
     tf.enable_eager_execution(config=tf_config)
+    # tf.enable_eager_execution(config=tf_config, allow_soft_placement=True, log_device_placement=True)
+    # sess = tf.Session(config=tf_config, allow_soft_placement=True, log_device_placement=True)
 
     fire.Fire(train)
