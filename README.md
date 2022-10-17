@@ -17,6 +17,15 @@ https://arxiv.org/abs/2003.05744
  * Meshpy: https://documen.tician.de/meshpy/index.html
  
 
+## Installing JAX
+- Install latest cuda compiler and cudnn from `nvidia` channel
+```
+conda install cuda -c nvidia
+conda install cudnn -c nvidia
+```
+- Use official Jax install command on Linux: `pip install --upgrade "jax[cuda]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html`
+- Disable parallelism `export XLA_FLAGS=--xla_gpu_force_compilation_parallelism=1`
+
 ## Steps to run this code as is (on AWS)
 - Create a CloudFormation stack with the [Matlab 2019b template](https://github.com/mathworks-ref-arch/matlab-on-aws/blob/master/releases/R2019b/README.md). Follow [this video tutorial](https://uk.mathworks.com/videos/how-to-run-matlab-in-the-cloud-with-amazon-web-services-1542634996553.html?requestedDomain=)
 - Connect to the resulting EC2 instance with ssh with GUI formarding (`-X` or `-Y`)

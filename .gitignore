@@ -4,3 +4,8 @@ results/*
 training_dir/*
 __pycache__/*
 
+data/*
+__pycache__/*
+tensorboard_dir/*
+train_checkpoints/*
+source/__pycache__/*
