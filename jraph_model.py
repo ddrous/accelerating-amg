@@ -1,9 +1,15 @@
-import sonnet as snt
-import graph_nets as gn
-import tensorflow as tf
-from graph_nets import modules
-from functools import partial
-
+import functools
+import logging
+import pathlib
+import pickle
+from absl import app
+from absl import flags
+import haiku as hk
+import jax
+import jax.numpy as jnp
+import jraph
+from jraph.ogb_examples import data_utils
+import optax
 
 class EncodeProcessDecodeNonRecurrent(snt.AbstractModule):
     """
@@ -137,6 +143,42 @@ def make_mlp_model(latent_size=16, num_layers=2, last_round_edges=False):
             snt.nets.MLP([latent_size] * num_layers, activate_final=False)
         ])
 
+@jraph.concatenated_args
+def edge_update_fn(feats: jnp.ndarray) -> jnp.ndarray:
+  """Edge update function for graph net."""
+  net = hk.Sequential(
+      [hk.Linear(128), jax.nn.relu,
+       hk.Linear(128)])
+  return net(feats)
+
+
+@jraph.concatenated_args
+def node_update_fn(feats: jnp.ndarray) -> jnp.ndarray:
+  """Node update function for graph net."""
+  net = hk.Sequential(
+      [hk.Linear(128), jax.nn.relu,
+       hk.Linear(128)])
+  return net(feats)
+
+
+@jraph.concatenated_args
+def update_global_fn(feats: jnp.ndarray) -> jnp.ndarray:
+  """Global update function for graph net."""
+  # Molhiv is a binary classification task, so output pos neg logits.
+  net = hk.Sequential(
+      [hk.Linear(128), jax.nn.relu,
+       hk.Linear(2)])
+  return net(feats)
+
+
+@jraph.concatenated_args
+def identity_fn(feats: jnp.ndarray) -> jnp.ndarray:
+  """To avoid updating the global feature for graph net."""
+  # Molhiv is a binary classification task, so output pos neg logits.
+  net = hk.Sequential(
+      [hk.Linear(128), jax.nn.relu,
+       hk.Linear(2)])
+  return net(feats)
 
 class IdentityModule(snt.AbstractModule):
     def _build(self, inputs):

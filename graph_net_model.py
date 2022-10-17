@@ -1,8 +1,9 @@
-import sonnet as snt
+from functools import partial
+
 import graph_nets as gn
+import sonnet as snt
 import tensorflow as tf
 from graph_nets import modules
-from functools import partial
 
 
 class EncodeProcessDecodeNonRecurrent(snt.AbstractModule):

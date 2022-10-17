@@ -22,12 +22,12 @@ karate club to two distinct karate instructors (Mr. Hi and John A).
 
 import logging
 
-from absl import app
 import haiku as hk
 import jax
 import jax.numpy as jnp
 import jraph
 import optax
+from absl import app
 
 
 def get_zacharys_karate_club() -> jraph.GraphsTuple:
