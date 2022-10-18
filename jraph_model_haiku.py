@@ -3,15 +3,16 @@ import pathlib
 import pickle
 from functools import partial
 
+import haiku as hk
 import jax
 import jax.numpy as jnp
 import jraph
-import flax
-import flax.linen as nn
+import optax
 from absl import app, flags
 from jraph.ogb_examples import data_utils
 
-class EncodeProcessDecodeNonRecurrent(nn.Module):
+
+class EncodeProcessDecodeNonRecurrent(hk.Module):
     """
     similar to EncodeProcessDecode, but with non-recurrent core
     see docs for EncodeProcessDecode
@@ -38,17 +39,17 @@ class EncodeProcessDecodeNonRecurrent(nn.Module):
         if edge_output_size is None:
             edge_fn = None
         else:
-            edge_fn = lambda: nn.Dense(edge_output_size, name="edge_output")
+            edge_fn = lambda: hk.Linear(edge_output_size, name="edge_output")
         if node_output_size is None:
             node_fn = None
         else:
-            node_fn = lambda: nn.Dense(node_output_size, name="node_output")
+            node_fn = lambda: hk.Linear(node_output_size, name="node_output")
         if global_output_size is None:
             global_fn = None
         else:
-            global_fn = lambda: nn.Dense(global_output_size, name="global_output")
+            global_fn = lambda: hk.Linear(global_output_size, name="global_output")
 
-        self._output_transform = nn.GraphIndependent(edge_fn, node_fn, global_fn)
+        self._output_transform = hk.GraphIndependent(edge_fn, node_fn, global_fn)
 
     def __call__(self, input_op):
         latent = self._encoder(input_op)
@@ -64,7 +65,7 @@ class EncodeProcessDecodeNonRecurrent(nn.Module):
         return self._output_transform(self._decoder(latent))
 
 
-class MLPGraphNetwork(nn.Module):
+class MLPGraphNetwork(hk.Module):
     """GraphNetwork with MLP edge, node, and global models."""
 
     def __init__(self, latent_size=16, num_layers=2, global_block=True, last_round=False,
@@ -79,25 +80,37 @@ class MLPGraphNetwork(nn.Module):
             partial_make_mlp_model_edges = partial_make_mlp_model
 
         if global_block:
-            self._network = jraph.GraphNetwork(partial_make_mlp_model_edges, 
+            self._network = jraph.GraphNetwork(partial_make_mlp_model_edges, partial_make_mlp_model,
                                                     partial_make_mlp_model,
-                                                    partial_make_mlp_model,
-                                                    aggregate_edges_for_nodes_fn = jraph.segment_mean,
-                                                    aggregate_edges_for_globals_fn = jraph.segment_mean,
-                                                    aggregate_nodes_for_globals_fn = jraph.segment_mean)
+                                                    edge_block_opt={
+                                                        "use_globals": True
+                                                    },
+                                                    node_block_opt={
+                                                        "use_globals": True
+                                                    },
+                                                    global_block_opt={
+                                                        "use_globals": True,
+                                                        "edges_reducer": tf.unsorted_segment_mean,
+                                                        "nodes_reducer": tf.unsorted_segment_mean
+                                                    })
         else:
-            self._network = jraph.GraphNetwork(partial_make_mlp_model_edges, 
-                                                partial_make_mlp_model,
-                                                make_identity_model,
-                                                aggregate_edges_for_nodes_fn = jraph.segment_mean,
-                                                aggregate_edges_for_globals_fn = jraph.segment_mean,
-                                                aggregate_nodes_for_globals_fn = jraph.segment_mean)
+            self._network = jraph.GraphNetwork(partial_make_mlp_model_edges, partial_make_mlp_model,
+                                                    make_identity_model,
+                                                    edge_block_opt={
+                                                        "use_globals": False
+                                                    },
+                                                    node_block_opt={
+                                                        "use_globals": False
+                                                    },
+                                                    global_block_opt={
+                                                        "use_globals": False,
+                                                    })
 
     def __call__(self, inputs):
         return self._network(inputs)
 
 
-class MLPGraphIndependent(nn.Module):
+class MLPGraphIndependent(hk.Module):
     """GraphIndependent with MLP edge, node, and global models."""
 
     def __init__(self, latent_size=16, num_layers=2, name="MLPGraphIndependent"):
@@ -116,7 +129,7 @@ class MLPGraphIndependent(nn.Module):
     def __call__(self, inputs:jraph.GraphsTuple) -> jraph.GraphsTuple:
         return self._network(inputs)
 
-class GraphIndependent(nn.Module):
+class GraphIndependent(hk.Module):
   """A graph block that applies models to the graph elements independently.
   The inputs and outputs are graphs. The corresponding models are applied to
   each element of the graph (edges, nodes and globals) in parallel and
@@ -193,7 +206,7 @@ class GraphIndependent(nn.Module):
         globals=self._global_model(graph.globals, **global_model_kwargs))
 
 
-class WrappedModelFnModule(nn.Module):
+class WrappedModelFnModule(hk.Module):
   """Wraps a model_fn as a Sonnet module with a name.
   Following `blocks.py` convention, a `model_fn` is a callable that, when called
   with no arguments, returns a callable similar to a Sonnet module instance.
@@ -224,11 +237,11 @@ def make_mlp_model(latent_size=16, num_layers=2, last_round_edges=False):
     A Haiku module which contains the MLP.
   """
     if last_round_edges:
-        return nn.Sequential([nn.Dense(latent_size), jax.nn.relu]* num_layers + [nn.Dense(1)])
+        return hk.Sequential([hk.Linear(latent_size), jax.nn.relu]* num_layers + [hk.Linear(1)])
     else:
-        return nn.Sequential([nn.Dense(latent_size), jax.nn.relu]* (num_layers-1) + [nn.Dense(latent_size)]) ## TODO Check back here !
+        return hk.Sequential([hk.Linear(latent_size), jax.nn.relu]* (num_layers-1) + [hk.Linear(latent_size)]) ## TODO Check back here !
 
-class IdentityModule(nn.Module):
+class IdentityModule(hk.Module):
     def __call__(self, x: jraph.GraphsTuple) -> jraph.GraphsTuple:
         return x
 
