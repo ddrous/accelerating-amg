@@ -1,11 +1,11 @@
-import graph_nets as gn
+import jraph
 import matlab
 import numpy as np
 import tensorflow as tf
 from scipy.sparse import csr_matrix
 
 from data import As_poisson_grid
-from graph_net_model import EncodeProcessDecodeNonRecurrent
+from jraph_model import EncodeProcessDecodeNonRecurrent
 
 
 def get_model(model_name, model_config, run_config, matlab_engine, train=False, train_config=None):
@@ -23,7 +23,6 @@ def get_model(model_name, model_config, run_config, matlab_engine, train=False, 
 
 def load_model(checkpoint_dir, dummy_input, model_config, run_config, matlab_engine, get_optimizer=True,
                train_config=None):
-    tf.enable_eager_execution()
     model = create_model(model_config)
 
     # we have to use the model at least once to get the list of variables
@@ -54,12 +53,11 @@ def load_model(checkpoint_dir, dummy_input, model_config, run_config, matlab_eng
 
 
 def create_model(model_config):
-    with tf.device('/gpu:0'):
-        return EncodeProcessDecodeNonRecurrent(num_cores=model_config.mp_rounds, edge_output_size=1,
-                                               node_output_size=1, global_block=model_config.global_block,
-                                               latent_size=model_config.latent_size,
-                                               num_layers=model_config.mlp_layers,
-                                               concat_encoder=model_config.concat_encoder)
+    return EncodeProcessDecodeNonRecurrent(num_cores=model_config.mp_rounds, edge_output_size=1,
+                                            node_output_size=1, global_block=model_config.global_block,
+                                            latent_size=model_config.latent_size,
+                                            num_layers=model_config.mlp_layers,
+                                            concat_encoder=model_config.concat_encoder)
 
 
 def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_nodes_list=None, baseline_P_list=None,
