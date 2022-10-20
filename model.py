@@ -3,6 +3,11 @@ import matlab
 import numpy as np
 import tensorflow as tf
 from scipy.sparse import csr_matrix
+import jax
+import flax
+import optax
+import flax.linen as nn
+from flax.training import train_state, checkpoints
 
 from data import As_poisson_grid
 from jraph_model import EncodeProcessDecodeNonRecurrent
@@ -25,31 +30,32 @@ def load_model(checkpoint_dir, dummy_input, model_config, run_config, matlab_eng
                train_config=None):
     model = create_model(model_config)
 
-    # we have to use the model at least once to get the list of variables
-    model(csrs_to_graphs_tuple([dummy_input], matlab_engine, coarse_nodes_list=np.array([[0, 1]]),
-                               baseline_P_list=[tf.convert_to_tensor(dummy_input.toarray()[:, [0, 1]])],
-                               node_indicators=run_config.node_indicators,
-                               edge_indicators=run_config.edge_indicators))
+    ## Create a radom input: we have to use the model at least once to get the list of variables
+    dummy_graph_tuple = csrs_to_graphs_tuple([dummy_input], 
+                                            matlab_engine, 
+                                            coarse_nodes_list=np.array([[0, 1]]),
+                                            baseline_P_list=[tf.convert_to_tensor(dummy_input.toarray()[:, [0, 1]])],
+                                            node_indicators=run_config.node_indicators,
+                                            edge_indicators=run_config.edge_indicators)
 
-    variables = model.get_all_variables()
-    variables_dict = {variable.name: variable for variable in variables}
-    if get_optimizer:
-        global_step = tf.train.get_or_create_global_step()
-        decay_steps = 100
-        decay_rate = 1.0
-        learning_rate = tf.train.exponential_decay(train_config.learning_rate, global_step, decay_steps, decay_rate)
-        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+    ## Randomly initialise the weights
+    params = model.init(jax.random.PRNGKey(0), dummy_graph_tuple)
 
-        checkpoint = tf.train.Checkpoint(**variables_dict, optimizer=optimizer, global_step=global_step)
-    else:
-        optimizer = None
-        global_step = None
-        checkpoint = tf.train.Checkpoint(**variables_dict)
-    latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
+    decay_steps = 100
+    decay_rate = 1.0
+    learning_rate = optax.exponential_decay(init_value=train_config.learning_rate, 
+                                            transition_steps=decay_steps, 
+                                            decay_rate=decay_rate)
+    optimiser = optax.adam(learning_rate=learning_rate)
+    state = train_state.TrainState.create(apply_fn=model.apply,
+                                        params=params,
+                                        tx=optimiser)
+
+    latest_checkpoint = checkpoints.restore_checkpoint(ckpt_dir=checkpoint_dir, target=state)
+
     if latest_checkpoint is None:
         raise RuntimeError(f'training_dir {checkpoint_dir} does not exist')
-    checkpoint.restore(latest_checkpoint)
-    return model, optimizer, global_step
+    return model, latest_checkpoint.params, optimiser
 
 
 def create_model(model_config):
@@ -102,15 +108,17 @@ def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_node
     receivers_numpy = np.concatenate([coo.col for coo in coos])
     receivers = tf.convert_to_tensor(receivers_numpy)
 
-    # see the source of _concatenate_data_dicts for explanation
-    offsets = gn.utils_tf._compute_stacked_offsets(n_node, n_edge)
-    senders += offsets
-    receivers += offsets
+    # # see the source of _concatenate_data_dicts for explanation
+    # offsets = gn.utils_tf._compute_stacked_offsets(n_node, n_edge)
+    # senders += offsets
+    # receivers += offsets
+
 
     if not node_indicators:
         nodes = None
     else:
         node_encodings_list = []
+        graphs_list = []
         for csr, coarse_nodes in zip(csrs, coarse_nodes_list):
             coarse_indices = np.in1d(range(csr.shape[0]), coarse_nodes, assume_unique=True)
 
@@ -123,19 +131,28 @@ def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_node
         numpy_nodes = np.concatenate(node_encodings_list)
         nodes = tf.convert_to_tensor(numpy_nodes, dtype=dtype)
 
-    graphs_tuple = gn.graphs.GraphsTuple(
-        nodes=nodes,
-        edges=edges,
-        globals=None,
-        receivers=receivers,
-        senders=senders,
-        n_node=n_node,
-        n_edge=n_edge
-    )
-    if not node_indicators:
-        graphs_tuple = gn.utils_tf.set_zero_node_features(graphs_tuple, 1, dtype=dtype)
+        # COO format for sparse matrices contains a list of row indices and a list of column indices
+        coo = csr.tocoo()
+        senders = tf.convert_to_tensor(coo.row)
+        receivers = tf.convert_to_tensor(coo.col)
 
-    graphs_tuple = gn.utils_tf.set_zero_global_features(graphs_tuple, node_feature_size, dtype=dtype)
+        graph_tuple = jraph.GraphsTuple(
+            nodes=nodes,
+            edges=edges,
+            globals=None,
+            receivers=receivers,
+            senders=senders,
+            n_node=n_node,
+            n_edge=n_edge
+        )
+        graphs_list.append(graph_tuple)
+
+    graphs_tuple = jraph.batch(graphs_list)
+
+    if not node_indicators:
+        graphs_tuple = set_zero_node_features(graphs_tuple, 1, dtype=dtype)
+
+    graphs_tuple = set_zero_global_features(graphs_tuple, node_feature_size, dtype=dtype)
 
     return graphs_tuple
 
@@ -240,10 +257,7 @@ def to_prolongation_matrix_tensor(matrix, coarse_nodes, baseline_P, nodes,
 
 
 def graphs_tuple_to_sparse_matrices(graphs_tuple, return_nodes=False):
-    num_graphs = int(graphs_tuple.n_node.shape[0])
-    graphs = [gn.utils_tf.get_graph(graphs_tuple, i)
-              for i in range(num_graphs)]
-
+    graphs = graphs_tuple.unbatch(graphs_tuple)
     matrices = [graphs_tuple_to_sparse_tensor(graph) for graph in graphs]
 
     if return_nodes:
@@ -253,3 +267,127 @@ def graphs_tuple_to_sparse_matrices(graphs_tuple, return_nodes=False):
         return matrices
 
 
+
+#### A bunch of functions copied from graphs_net: https://github.com/deepmind/graph_nets/blob/master/graph_nets/utils_tf.py 
+def set_zero_node_features(graph,
+                           node_size,
+                           dtype=tf.float32,
+                           name="set_zero_node_features"):
+  """Completes the node state of a graph.
+  Args:
+    graph: A `graphs.GraphsTuple` with a `None` edge state.
+    node_size: (int) the dimension for the created node features.
+    dtype: (tensorflow type) the type for the created nodes features.
+    name: (string, optional) A name for the operation.
+  Returns:
+    The same graph but for the node field, which is a `Tensor` of shape
+    `[number_of_nodes, node_size]`  where `number_of_nodes = sum(graph.n_node)`,
+    with type `dtype`, filled with zeros.
+  Raises:
+    ValueError: If the `NODES` field is not None in `graph`.
+    ValueError: If `node_size` is None.
+  """
+  if graph.nodes is not None:
+    raise ValueError(
+        "Cannot complete node state if the graph already has node features.")
+  if node_size is None:
+    raise ValueError("Cannot complete nodes with None node_size")
+  with tf.name_scope(name):
+    n_nodes = tf.reduce_sum(graph.n_node)
+    return graph._replace(
+        nodes=tf.zeros(shape=[n_nodes, node_size], dtype=dtype))
+
+
+def set_zero_edge_features(graph,
+                           edge_size,
+                           dtype=tf.float32,
+                           name="set_zero_edge_features"):
+  """Completes the edge state of a graph.
+  Args:
+    graph: A `graphs.GraphsTuple` with a `None` edge state.
+    edge_size: (int) the dimension for the created edge features.
+    dtype: (tensorflow type) the type for the created edge features.
+    name: (string, optional) A name for the operation.
+  Returns:
+    The same graph but for the edge field, which is a `Tensor` of shape
+    `[number_of_edges, edge_size]`, where `number_of_edges = sum(graph.n_edge)`,
+    with type `dtype` and filled with zeros.
+  Raises:
+    ValueError: If the `EDGES` field is not None in `graph`.
+    ValueError: If the `RECEIVERS` or `SENDERS` field are None in `graph`.
+    ValueError: If `edge_size` is None.
+  """
+  if graph.edges is not None:
+    raise ValueError(
+        "Cannot complete edge state if the graph already has edge features.")
+  if graph.receivers is None or graph.senders is None:
+    raise ValueError(
+        "Cannot complete edge state if the receivers or senders are None.")
+  if edge_size is None:
+    raise ValueError("Cannot complete edges with None edge_size")
+  with tf.name_scope(name):
+    senders_leading_size = graph.senders.shape.as_list()[0]
+    if senders_leading_size is not None:
+      n_edges = senders_leading_size
+    else:
+      n_edges = tf.reduce_sum(graph.n_edge)
+    return graph._replace(
+        edges=tf.zeros(shape=[n_edges, edge_size], dtype=dtype))
+
+
+def set_zero_global_features(graph,
+                             global_size,
+                             dtype=tf.float32,
+                             name="set_zero_global_features"):
+  """Completes the global state of a graph.
+  Args:
+    graph: A `graphs.GraphsTuple` with a `None` global state.
+    global_size: (int) the dimension for the created global features.
+    dtype: (tensorflow type) the type for the created global features.
+    name: (string, optional) A name for the operation.
+  Returns:
+    The same graph but for the global field, which is a `Tensor` of shape
+    `[num_graphs, global_size]`, type `dtype` and filled with zeros.
+  Raises:
+    ValueError: If the `GLOBALS` field of `graph` is not `None`.
+    ValueError: If `global_size` is not `None`.
+  """
+  if graph.globals is not None:
+    raise ValueError(
+        "Cannot complete global state if graph already has global features.")
+  if global_size is None:
+    raise ValueError("Cannot complete globals with None global_size")
+  with tf.name_scope(name):
+    n_graphs = get_num_graphs(graph)
+    return graph._replace(
+        globals=tf.zeros(shape=[n_graphs, global_size], dtype=dtype))
+
+
+def get_num_graphs(input_graphs, name="get_num_graphs"):
+  """Returns the number of graphs (i.e. the batch size) in `input_graphs`.
+  Args:
+    input_graphs: A `graphs.GraphsTuple` containing tensors.
+    name: (string, optional) A name for the operation.
+  Returns:
+    An `int` (if a static number of graphs is defined) or a `tf.Tensor` (if the
+      number of graphs is dynamic).
+  """
+  with tf.name_scope(name):
+    return _get_shape(input_graphs.n_node)[0]
+
+def _get_shape(tensor):
+  """Returns the tensor's shape.
+   Each shape element is either:
+   - an `int`, when static shape values are available, or
+   - a `tf.Tensor`, when the shape is dynamic.
+  Args:
+    tensor: A `tf.Tensor` to get the shape of.
+  Returns:
+    The `list` which contains the tensor's shape.
+  """
+
+  shape_list = tensor.shape.as_list()
+  if all(s is not None for s in shape_list):
+    return shape_list
+  shape_tensor = tf.shape(tensor)
+  return [shape_tensor[i] if s is None else s for i, s in enumerate(shape_list)]
