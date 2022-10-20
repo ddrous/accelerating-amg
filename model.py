@@ -8,6 +8,7 @@ import flax
 import optax
 import flax.linen as nn
 from flax.training import train_state, checkpoints
+import pyamg
 
 from data import As_poisson_grid
 from jraph_model import EncodeProcessDecodeNonRecurrent
@@ -26,11 +27,11 @@ def get_model(model_name, model_config, run_config, matlab_engine, train=False, 
         return graph_model
 
 
-def load_model(checkpoint_dir, dummy_input, model_config, run_config, matlab_engine, get_optimizer=True,
-               train_config=None):
+def load_model(checkpoint_dir, model_config, run_config, train_config, matlab_engine):
     model = create_model(model_config)
 
     ## Create a radom input: we have to use the model at least once to get the list of variables
+    dummy_input = pyamg.gallery.poisson((7, 7), type='FE', format='csr')
     dummy_graph_tuple = csrs_to_graphs_tuple([dummy_input], 
                                             matlab_engine, 
                                             coarse_nodes_list=np.array([[0, 1]]),

@@ -12,10 +12,16 @@ from pyamg.classical import direct_interpolation
 from scipy.sparse import csr_matrix
 from tqdm import tqdm
 
+import jax
+import flax
+import optax
+import flax.linen as nn
+from flax.training import train_state, checkpoints
+
 import configs
 from data import generate_A
 from dataset import DataSet
-from model import csrs_to_graphs_tuple, create_model, graphs_tuple_to_sparse_matrices, to_prolongation_matrix_tensor
+from model import csrs_to_graphs_tuple, create_model, graphs_tuple_to_sparse_matrices, load_model, to_prolongation_matrix_tensor
 from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
     two_grid_error_matrix, compute_coarse_A
 from relaxation import relaxation_matrices
@@ -349,11 +355,11 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_TEST', se
                                                )
 
     if config.train_config.load_model:
-        raise NotImplementedError()
+        model, params, optimiser = load_model(checkpoint_dir, dummy_input, model_config, run_config, matlab_engine, get_optimizer=True,
+               train_config=None)
     else:
-        model = create_model(config.model_config)
-        global_step = tf.train.get_or_create_global_step()
-        optimizer = tf.train.AdamOptimizer(learning_rate=config.train_config.learning_rate)
+        raise NotImplementedError()
+
 
     run_name = ''.join(random.choices(string.digits, k=5))  # to make the run_name string unique
     create_results_dir(run_name)
