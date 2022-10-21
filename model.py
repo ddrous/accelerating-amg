@@ -27,7 +27,7 @@ def get_model(model_name, model_config, run_config, matlab_engine, train=False, 
         return graph_model
 
 
-def load_model(checkpoint_dir, model_config, run_config, train_config, matlab_engine):
+def load_model(train_config, model_config, run_config, matlab_engine):
     model = create_model(model_config)
 
     ## Create a radom input: we have to use the model at least once to get the list of variables
@@ -52,6 +52,7 @@ def load_model(checkpoint_dir, model_config, run_config, train_config, matlab_en
                                         params=params,
                                         tx=optimiser)
 
+    checkpoint_dir = train_config.checkpoint_dir
     latest_checkpoint = checkpoints.restore_checkpoint(ckpt_dir=checkpoint_dir, target=state)
 
     if latest_checkpoint is None:

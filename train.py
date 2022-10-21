@@ -355,11 +355,9 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_TEST', se
                                                )
 
     if config.train_config.load_model:
-        model, params, optimiser = load_model(checkpoint_dir, dummy_input, model_config, run_config, matlab_engine, get_optimizer=True,
-               train_config=None)
+        model, params, optimiser = load_model(config.train_config, config.model_config, config.run_config, matlab_engine)
     else:
         raise NotImplementedError()
-
 
     run_name = ''.join(random.choices(string.digits, k=5))  # to make the run_name string unique
     create_results_dir(run_name)
