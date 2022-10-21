@@ -100,9 +100,11 @@ def create_dataset_from_As(As, data_config):
     return DataSet(As, Ss, coarse_nodes_list, baseline_P_list)
 
 
-def loss(dataset, A_graphs_tuple, P_graphs_tuple,
+def loss(params, model, dataset, A_graphs_tuple, P_graphs_tuple,
          run_config, train_config, data_config):
+
     As = graphs_tuple_to_sparse_matrices(A_graphs_tuple)
+    P_graphs_tuple = model.apply(params, A_graphs_tuple)
     Ps_square, nodes_list = graphs_tuple_to_sparse_matrices(P_graphs_tuple, True)
 
     if train_config.fourier:
@@ -157,6 +159,55 @@ def loss(dataset, A_graphs_tuple, P_graphs_tuple,
     return total_norm / batch_size, M  # M is chosen randomly - the last in the batch
 
 
+def select_example_M(dataset, A_graphs_tuple, P_graphs_tuple,
+                    run_config, train_config, data_config):
+    As = graphs_tuple_to_sparse_matrices(A_graphs_tuple)
+    Ps_square, nodes_list = graphs_tuple_to_sparse_matrices(P_graphs_tuple, True)
+
+    if train_config.fourier:
+        As = [tf.cast(tf.sparse.to_dense(A), tf.complex128) for A in As]
+        block_As = [block_diagonalize_A_single(A, data_config.root_num_blocks, tensor=True) for A in As]
+        block_Ss = relaxation_matrices([csr_matrix(A.numpy()) for block_A in block_As for A in block_A])
+
+    batch_size = 1
+    for i in range(batch_size):
+        if train_config.fourier:
+            num_blocks = data_config.root_num_blocks ** 2 - 1
+
+            P_square = Ps_square[i]
+            coarse_nodes = dataset.coarse_nodes_list[i]
+            baseline_P = dataset.baseline_P_list[i]
+            nodes = nodes_list[i]
+            P = to_prolongation_matrix_tensor(P_square, coarse_nodes, baseline_P, nodes,
+                                              normalize_rows=run_config.normalize_rows,
+                                              normalize_rows_by_node=run_config.normalize_rows_by_node)
+            block_P = block_diagonalize_P(P, data_config.root_num_blocks, coarse_nodes)
+
+            As = tf.stack(block_As[i])
+            Ps = tf.stack(block_P)
+            Rs = tf.transpose(Ps, perm=[0, 2, 1], conjugate=True)
+            Ss = tf.convert_to_tensor(block_Ss[num_blocks * i:num_blocks * (i + 1)])
+
+            Ms = two_grid_error_matrices(As, Ps, Rs, Ss)
+            M = Ms[-1]  # for logging
+
+        else:
+            A = tf.sparse.to_dense(As[i])
+            P_square = Ps_square[i]
+            coarse_nodes = dataset.coarse_nodes_list[i]
+            baseline_P = dataset.baseline_P_list[i]
+            nodes = nodes_list[i]
+            P = to_prolongation_matrix_tensor(P_square, coarse_nodes, baseline_P, nodes,
+                                              normalize_rows=run_config.normalize_rows,
+                                              normalize_rows_by_node=run_config.normalize_rows_by_node)
+            R = tf.transpose(P)
+            S = tf.convert_to_tensor(dataset.Ss[i])
+
+            M = two_grid_error_matrix(A, P, R, S)
+
+    return M  # M is chosen randomly - the last in the batch
+
+
 def save_model_and_optimizer(checkpoint_prefix, model, optimizer, global_step):
     variables = model.get_all_variables()
     variables_dict = {variable.name: variable for variable in variables}
@@ -166,7 +217,7 @@ def save_model_and_optimizer(checkpoint_prefix, model, optimizer, global_step):
 
 
 def train_run(run_dataset, run, batch_size, config,
-              model, optimizer, global_step, checkpoint_prefix,
+              model, params, optimizer, global_step, checkpoint_prefix,
               eval_dataset, eval_A_graphs_tuple, eval_config, matlab_engine):
     num_As = len(run_dataset.As)
     if num_As % batch_size != 0:
@@ -174,6 +225,10 @@ def train_run(run_dataset, run, batch_size, config,
 
     run_dataset = run_dataset.shuffle()
     num_batches = num_As // batch_size
+
+    opt_state = optimizer.init(params)
+    loss_grad_fn = jax.value_and_grad(loss)
+
     loop = tqdm(range(num_batches))
     for batch in loop:
         start_index = batch * batch_size
@@ -186,29 +241,25 @@ def train_run(run_dataset, run, batch_size, config,
                                                     node_indicators=config.run_config.node_indicators,
                                                     edge_indicators=config.run_config.edge_indicators)
 
-        with tf.GradientTape() as tape:
-            with tf.device('/gpu:0'):
-                batch_P_graphs_tuple = model(batch_A_graphs_tuple)
-            frob_loss, M = loss(batch_dataset, batch_A_graphs_tuple, batch_P_graphs_tuple,
+        frob_loss, grads = loss_grad_fn(params, model, batch_dataset, batch_A_graphs_tuple, batch_P_graphs_tuple,
                                 config.run_config, config.train_config, config.data_config)
+        updates, opt_state = optimizer.update(grads, opt_state)
+        params = optax.apply_updates(params, updates)
 
         print(f"frob loss: {frob_loss.numpy()}")
         save_every = max(1000 // batch_size, 1)
         if batch % save_every == 0:
             checkpoint = save_model_and_optimizer(checkpoint_prefix, model, optimizer, global_step)
 
-        # we don't call .get_variables() because the model is Sequential/custom,
-        # see docs for Sequential.get_variables()
-        variables = model.get_all_variables()
-        grads = tape.gradient(frob_loss, variables)
-
-        global_step.assign_add(batch_size - 1)  # apply_gradients increments global_step by 1
-        optimizer.apply_gradients(zip(grads, variables),
-                                  global_step=global_step)
-
+        batch_P_graphs_tuple = model.apply(params, batch_A_graphs_tuple)
+        M = select_example_M(batch_dataset, batch_A_graphs_tuple, batch_P_graphs_tuple,
+                                config.run_config, config.train_config, config.data_config)
         record_tb(M, run, num_As, batch, batch_size, frob_loss, grads, loop, model,
-                  variables, eval_dataset, eval_A_graphs_tuple, eval_config)
-    return checkpoint
+                  params, eval_dataset, eval_A_graphs_tuple, eval_config)
+
+        global_step.assign_add(batch_size)  # TODO: shouldn't this incremented by just 1 ?
+
+    return checkpoint, global_step
 
 
 def record_tb_loss(frob_loss):
@@ -277,10 +328,10 @@ def clone_model(model, model_config, run_config, matlab_engine):
                                        edge_indicators=run_config.edge_indicators)
     clone(dummy_input)
     [var_clone.assign(var_orig) for var_clone, var_orig in zip(clone.get_all_variables(), model.get_all_variables())]
-    return clone
+    return clone, model.params
 
 
-def coarsen_As(fine_dataset, model, run_config, matlab_engine, batch_size=64):
+def coarsen_As(fine_dataset, model, params, run_config, matlab_engine, batch_size=64):
     # computes the Galerkin operator P^(T)AP on each of the A matrices in a batch, using the Prolongation
     # outputted from the model
     As = fine_dataset.As
@@ -305,7 +356,7 @@ def coarsen_As(fine_dataset, model, run_config, matlab_engine, batch_size=64):
     nodes_list = []
     for batch in tqdm(range(num_batches)):
         A_graphs_tuple = A_graphs_tuple_batches[batch]
-        P_graphs_tuple = model(A_graphs_tuple)
+        P_graphs_tuple = model.apply(params, A_graphs_tuple)
         P_square_batch, nodes_batch = graphs_tuple_to_sparse_matrices(P_graphs_tuple, return_nodes=True)
         Ps_square.extend(P_square_batch)
         nodes_list.extend(nodes_batch)
@@ -326,8 +377,8 @@ def coarsen_As(fine_dataset, model, run_config, matlab_engine, batch_size=64):
     return coarse_As
 
 
-def create_coarse_dataset(fine_dataset, model, data_config, run_config, matlab_engine):
-    As = coarsen_As(fine_dataset, model, run_config, matlab_engine)
+def create_coarse_dataset(fine_dataset, model, params, data_config, run_config, matlab_engine):
+    As = coarsen_As(fine_dataset, model, params, run_config, matlab_engine)
     return create_dataset_from_As(As, data_config)
 
 
@@ -355,7 +406,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_TEST', se
                                                )
 
     if config.train_config.load_model:
-        model, params, optimiser = load_model(config.train_config, config.model_config, config.run_config, matlab_engine)
+        model, params, optimizer = load_model(config.train_config, config.model_config, config.run_config, matlab_engine)
     else:
         raise NotImplementedError()
 
@@ -368,21 +419,29 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_TEST', se
     writer = tf.contrib.summary.create_file_writer(log_dir)
     writer.set_as_default()
 
+    state = train_state.TrainState.create(apply_fn=model.apply,
+                                        params=params,
+                                        tx=optimizer)
+
+    global_step = tf.Variable(0)
     for run in range(config.train_config.num_runs):
         # we create the data before the training loop starts for efficiency,
         # at the loop we only slice batches and convert to tensors
         run_dataset = create_dataset(config.train_config.samples_per_run, config.data_config,
                                      run=run, matlab_engine=matlab_engine)
 
-        checkpoint = train_run(run_dataset, run, batch_size, config,
-                               model, optimizer, global_step,
+        checkpoint, global_step = train_run(run_dataset, run, batch_size, config,
+                               model, params, optimizer, global_step,
                                checkpoint_prefix,
                                eval_dataset, eval_A_graphs_tuple, eval_config,
                                matlab_engine)
-        checkpoint.save(file_prefix=checkpoint_prefix)
+
+        # checkpoint_dir = train_config.checkpoint_dir
+        # latest_checkpoint = checkpoints.restore_checkpoint(ckpt_dir=checkpoint_dir, target=state)
+        checkpoints.save_checkpoint(ckpt_dir=checkpoint_prefix, target=state, step=global_step)
 
     if config.train_config.coarsen:
-        old_model = clone_model(model, config.model_config, config.run_config, matlab_engine)
+        old_model, old_params = clone_model(model, config.model_config, config.run_config, matlab_engine)
 
         for run in range(config.train_config.num_runs):
             run_dataset = create_dataset(config.train_config.samples_per_run, config.data_config,
@@ -395,7 +454,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_TEST', se
                                               fine_data_config,
                                               run=run,
                                               matlab_engine=matlab_engine)
-            coarse_run_dataset = create_coarse_dataset(fine_run_dataset, old_model,
+            coarse_run_dataset = create_coarse_dataset(fine_run_dataset, old_model, old_params,
                                                        config.data_config,
                                                        config.run_config,
                                                        matlab_engine=matlab_engine)
@@ -404,7 +463,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_TEST', se
             combined_run_dataset = combined_run_dataset.shuffle()
 
             checkpoint = train_run(combined_run_dataset, run, batch_size, config,
-                                   model, optimizer, global_step,
+                                   model, params, optimizer, global_step,
                                    checkpoint_prefix,
                                    eval_dataset, eval_A_graphs_tuple, eval_config,
                                    matlab_engine)
