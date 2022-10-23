@@ -47,3 +47,20 @@ def write_config_file(run_name, config, seed):
 def tril_indices(grid_size):
     """Cached version of np.tril_indices used for creating relaxation matrices"""
     return np.tril_indices(grid_size)
+
+
+def print_available_gpu(intro="\n"):
+    import nvidia_smi
+    nvidia_smi.nvmlInit()
+
+    handle = nvidia_smi.nvmlDeviceGetHandleByIndex(0)
+    # card id 0 hardcoded here, there is also a call to get all available card ids, so we could iterate
+
+    info = nvidia_smi.nvmlDeviceGetMemoryInfo(handle)
+    print(intro)
+    print("Total memory:", info.total)
+    print("Free memory:", info.free)
+    print("Used memory:", info.used)
+    print("#######################################")
+
+    nvidia_smi.nvmlShutdown()

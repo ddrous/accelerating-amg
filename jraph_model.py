@@ -17,38 +17,37 @@ class EncodeProcessDecodeNonRecurrent(nn.Module):
     see docs for EncodeProcessDecode
     """
 
-    def __init__(self,
-                 num_cores=3,
-                 edge_output_size=None,
-                 node_output_size=None,
-                 global_output_size=None,
-                 global_block=True,
-                 latent_size=16,
-                 num_layers=2,
-                 concat_encoder=True,
-                 name="EncodeProcessDecodeNonRecurrent"):
-        super(EncodeProcessDecodeNonRecurrent, self).__init__(name=name)
-        self._encoder = MLPGraphIndependent(latent_size=latent_size, num_layers=num_layers)
-        self._cores = [MLPGraphNetwork(latent_size=latent_size, num_layers=num_layers,
-                                       global_block=global_block) for _ in range(num_cores)]
-        self._decoder = MLPGraphIndependent(latent_size=latent_size, num_layers=num_layers)
-        self.concat_encoder = concat_encoder
+    num_cores: int = 3,
+    edge_output_size: int = None,
+    node_output_size: int = None,
+    global_output_size: int = None,
+    global_block: bool = True,
+    latent_size: int = 16,
+    num_layers: int = 2,
+    concat_encoder: bool = True,
+    name: str = "EncodeProcessDecodeNonRecurrent"
+
+    def setup(self):
+        self._encoder = MLPGraphIndependent(latent_size=self.latent_size, num_layers=self.num_layers)
+        self._cores = [MLPGraphNetwork(latent_size=self.latent_size, num_layers=self.num_layers,
+                                       global_block=self.global_block) for _ in range(self.num_cores)]
+        self._decoder = MLPGraphIndependent(latent_size=self.latent_size, num_layers=self.num_layers)
 
         # Transforms the outputs into the appropriate shapes.
-        if edge_output_size is None:
+        if self.edge_output_size is None:
             edge_fn = None
         else:
-            edge_fn = lambda: nn.Dense(edge_output_size, name="edge_output")
-        if node_output_size is None:
+            edge_fn = lambda: nn.Dense(self.edge_output_size, name="edge_output")
+        if self.node_output_size is None:
             node_fn = None
         else:
-            node_fn = lambda: nn.Dense(node_output_size, name="node_output")
-        if global_output_size is None:
+            node_fn = lambda: nn.Dense(self.node_output_size, name="node_output")
+        if self.global_output_size is None:
             global_fn = None
         else:
-            global_fn = lambda: nn.Dense(global_output_size, name="global_output")
+            global_fn = lambda: nn.Dense(self.global_output_size, name="global_output")
 
-        self._output_transform = nn.GraphIndependent(edge_fn, node_fn, global_fn)
+        self._output_transform = GraphIndependent(edge_fn, node_fn, global_fn)
 
     def __call__(self, input_op):
         latent = self._encoder(input_op)
@@ -67,18 +66,22 @@ class EncodeProcessDecodeNonRecurrent(nn.Module):
 class MLPGraphNetwork(nn.Module):
     """GraphNetwork with MLP edge, node, and global models."""
 
-    def __init__(self, latent_size=16, num_layers=2, global_block=True, last_round=False,
-                 name="MLPGraphNetwork"):
-        super(MLPGraphNetwork, self).__init__(name=name)
-        partial_make_mlp_model = partial(make_mlp_model, latent_size=latent_size, num_layers=num_layers,
+    latent_size: int = 16, 
+    num_layers: int = 2, 
+    global_block: int = True, 
+    last_round: int = False,
+    name: str = "MLPGraphNetwork"
+
+    def setup(self):
+        partial_make_mlp_model = partial(make_mlp_model, latent_size=self.latent_size, num_layers=self.num_layers,
                                          last_round_edges=False)
-        if last_round:
-            partial_make_mlp_model_edges = partial(make_mlp_model, latent_size=latent_size, num_layers=num_layers,
+        if self.last_round:
+            partial_make_mlp_model_edges = partial(make_mlp_model, latent_size=self.latent_size, num_layers=self.num_layers,
                                                    last_round_edges=True)
         else:
             partial_make_mlp_model_edges = partial_make_mlp_model
 
-        if global_block:
+        if self.global_block:
             self._network = jraph.GraphNetwork(partial_make_mlp_model_edges, 
                                                     partial_make_mlp_model,
                                                     partial_make_mlp_model,
@@ -100,12 +103,14 @@ class MLPGraphNetwork(nn.Module):
 class MLPGraphIndependent(nn.Module):
     """GraphIndependent with MLP edge, node, and global models."""
 
-    def __init__(self, latent_size=16, num_layers=2, name="MLPGraphIndependent"):
-        super(MLPGraphIndependent, self).__init__(name=name)
+    latent_size: int = 16 
+    num_layers: int = 2
+    name: str = "MLPGraphIndependent"
 
+    def setup(self):
         partial_make_mlp_model = partial(make_mlp_model, 
-                                            latent_size=latent_size, 
-                                            num_layers=num_layers,
+                                            latent_size=self.latent_size, 
+                                            num_layers=self.num_layers,
                                             last_round_edges=False)
 
         self._network = GraphIndependent(
@@ -124,44 +129,30 @@ class GraphIndependent(nn.Module):
   decode the elements of a graph.
   """
 
-  def __init__(self,
-               edge_model_fn=None,
-               node_model_fn=None,
-               global_model_fn=None,
-               name="graph_independent"):
-    """Initializes the GraphIndependent module.
-    Args:
-      edge_model_fn: A callable that returns an edge model function. The
-        callable must return a Sonnet module (or equivalent). If passed `None`,
-        will pass through inputs (the default).
-      node_model_fn: A callable that returns a node model function. The callable
-        must return a Sonnet module (or equivalent). If passed `None`, will pass
-        through inputs (the default).
-      global_model_fn: A callable that returns a global model function. The
-        callable must return a Sonnet module (or equivalent). If passed `None`,
-        will pass through inputs (the default).
-      name: The module name.
-    """
-    super(GraphIndependent, self).__init__(name=name)
+  edge_model_fn: callable = None,
+  node_model_fn: callable = None,
+  global_model_fn: callable = None,
+  name: str = "graph_independent"
 
+  def setup(self):
     # The use of snt.Module below is to ensure the ops and variables that
     # result from the edge/node/global_model_fns are scoped analogous to how
     # the Edge/Node/GlobalBlock classes do.
-    if edge_model_fn is None:
+    if self.edge_model_fn is None:
         self._edge_model = lambda x: x
     else:
         self._edge_model = WrappedModelFnModule(
-            edge_model_fn, name="edge_model")
-    if node_model_fn is None:
+            self.edge_model_fn, name="edge_model")
+    if self.node_model_fn is None:
         self._node_model = lambda x: x
     else:
         self._node_model = WrappedModelFnModule(
-            node_model_fn, name="node_model")
-    if global_model_fn is None:
+            self.node_model_fn, name="node_model")
+    if self.global_model_fn is None:
         self._global_model = lambda x: x
     else:
         self._global_model = WrappedModelFnModule(
-            global_model_fn, name="global_model")
+            self.global_model_fn, name="global_model")
 
   def __call__(self,
              graph,
@@ -187,7 +178,7 @@ class GraphIndependent(nn.Module):
       node_model_kwargs = {}
     if global_model_kwargs is None:
       global_model_kwargs = {}
-    return graph.replace(
+    return graph._replace(
         edges=self._edge_model(graph.edges, **edge_model_kwargs),
         nodes=self._node_model(graph.nodes, **node_model_kwargs),
         globals=self._global_model(graph.globals, **global_model_kwargs))
@@ -198,16 +189,11 @@ class WrappedModelFnModule(nn.Module):
   Following `blocks.py` convention, a `model_fn` is a callable that, when called
   with no arguments, returns a callable similar to a Sonnet module instance.
   """
+  model_fn: callable = None 
+  name: str = None
 
-  def __init__(self, model_fn, name):
-    """Inits the module.
-    Args:
-      model_fn: callable that, when called with no arguments, returns a callable
-          similar to a Sonnet module instance.
-      name: Name for the wrapper module.
-    """
-    super(WrappedModelFnModule, self).__init__(name=name)
-    self._model = model_fn()
+  def setup(self):
+    self._model = self.model_fn()
 
   def __call__(self, *args, **kwargs):
     return self._model(*args, **kwargs)

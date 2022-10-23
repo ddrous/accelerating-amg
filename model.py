@@ -4,6 +4,7 @@ import numpy as np
 import tensorflow as tf
 from scipy.sparse import csr_matrix
 import jax
+import jax.numpy as jnp
 import flax
 import optax
 import flax.linen as nn
@@ -12,7 +13,7 @@ import pyamg
 
 from data import As_poisson_grid
 from jraph_model import EncodeProcessDecodeNonRecurrent
-
+from utils import print_available_gpu
 
 def get_model(model_name, model_config, run_config, matlab_engine, train=False, train_config=None):
     dummy_input = As_poisson_grid(1, 7 ** 2)[0]
@@ -38,6 +39,8 @@ def load_model(train_config, model_config, run_config, matlab_engine):
                                             baseline_P_list=[tf.convert_to_tensor(dummy_input.toarray()[:, [0, 1]])],
                                             node_indicators=run_config.node_indicators,
                                             edge_indicators=run_config.edge_indicators)
+
+    # print_available_gpu(intro="\nAFTER GT")
 
     ## Randomly initialise the weights
     params = model.init(jax.random.PRNGKey(0), dummy_graph_tuple)
@@ -70,15 +73,15 @@ def create_model(model_config):
 
 def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_nodes_list=None, baseline_P_list=None,
                          node_indicators=True, edge_indicators=True):
-    dtype = tf.float64
+    dtype = jnp.float32
 
     # build up the arguments for the GraphsTuple constructor
-    n_node = tf.convert_to_tensor([csr.shape[0] for csr in csrs])
-    n_edge = tf.convert_to_tensor([csr.nnz for csr in csrs])
+    n_node = jnp.array([csr.shape[0] for csr in csrs])
+    n_edge = jnp.array([csr.nnz for csr in csrs])
 
     if not edge_indicators:
         numpy_edges = np.concatenate([csr.data for csr in csrs])
-        edges = tf.expand_dims(tf.convert_to_tensor(numpy_edges, dtype=dtype), axis=1)
+        edges = jnp.expand_dims(jnp.array(numpy_edges, dtype=dtype), axis=1)
     else:
         edge_encodings_list = []
         for csr, coarse_nodes, baseline_P in zip(csrs, coarse_nodes_list, baseline_P_list):
@@ -101,20 +104,19 @@ def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_node
             edge_encodings = np.stack([coo.data, baseline_edges, non_baseline_edges]).T
             edge_encodings_list.append(edge_encodings)
         numpy_edges = np.concatenate(edge_encodings_list)
-        edges = tf.convert_to_tensor(numpy_edges, dtype=dtype)
+        edges = jnp.array(numpy_edges, dtype=dtype)
 
     # COO format for sparse matrices contains a list of row indices and a list of column indices
     coos = [csr.tocoo() for csr in csrs]
     senders_numpy = np.concatenate([coo.row for coo in coos])
-    senders = tf.convert_to_tensor(senders_numpy)
+    senders = jnp.array(senders_numpy)
     receivers_numpy = np.concatenate([coo.col for coo in coos])
-    receivers = tf.convert_to_tensor(receivers_numpy)
+    receivers = jnp.array(receivers_numpy)
 
     # # see the source of _concatenate_data_dicts for explanation
     # offsets = gn.utils_tf._compute_stacked_offsets(n_node, n_edge)
     # senders += offsets
     # receivers += offsets
-
 
     if not node_indicators:
         nodes = None
@@ -131,12 +133,12 @@ def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_node
             node_encodings_list.append(node_encodings)
 
         numpy_nodes = np.concatenate(node_encodings_list)
-        nodes = tf.convert_to_tensor(numpy_nodes, dtype=dtype)
+        nodes = jnp.array(numpy_nodes, dtype=dtype)
 
         # COO format for sparse matrices contains a list of row indices and a list of column indices
         coo = csr.tocoo()
-        senders = tf.convert_to_tensor(coo.row)
-        receivers = tf.convert_to_tensor(coo.col)
+        senders = jnp.array(coo.row)
+        receivers = jnp.array(coo.col)
 
         graph_tuple = jraph.GraphsTuple(
             nodes=nodes,
@@ -161,10 +163,10 @@ def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_node
 
 def P_square_sparsity_pattern(P, size, coarse_nodes, matlab_engine):
     P_coo = P.tocoo()
-    P_rows = matlab.double((P_coo.row + 1))
-    P_cols = matlab.double((P_coo.col + 1))
+    P_rows = matlab.double((np.float64(P_coo.row) + 1))
+    P_cols = matlab.double((np.float64(P_coo.col) + 1))
     P_values = matlab.double(P_coo.data)
-    coarse_nodes = matlab.double((coarse_nodes + 1))
+    coarse_nodes = matlab.double((np.float64(coarse_nodes) + 1))
     rows, cols = matlab_engine.square_P(P_rows, P_cols, P_values, size, coarse_nodes,  nargout=2)
     rows = np.array(rows._data).reshape(rows.size, order='F') - 1
     cols = np.array(cols._data).reshape(cols.size, order='F') - 1
@@ -359,8 +361,8 @@ def set_zero_global_features(graph,
         "Cannot complete global state if graph already has global features.")
   if global_size is None:
     raise ValueError("Cannot complete globals with None global_size")
-  with tf.name_scope(name):
-    n_graphs = get_num_graphs(graph)
+  with jax.named_scope(name):
+    n_graphs = list(graph.n_node.shape)[0]
     return graph._replace(
         globals=tf.zeros(shape=[n_graphs, global_size], dtype=dtype))
 
@@ -388,7 +390,7 @@ def _get_shape(tensor):
     The `list` which contains the tensor's shape.
   """
 
-  shape_list = tensor.shape.as_list()
+  shape_list = list(tensor.shape)
   if all(s is not None for s in shape_list):
     return shape_list
   shape_tensor = tf.shape(tensor)

@@ -25,7 +25,7 @@ from model import csrs_to_graphs_tuple, create_model, graphs_tuple_to_sparse_mat
 from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
     two_grid_error_matrix, compute_coarse_A
 from relaxation import relaxation_matrices
-from utils import create_results_dir, write_config_file, most_frequent_splitting, chunks
+from utils import create_results_dir, write_config_file, most_frequent_splitting, chunks, print_available_gpu
 
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = "0"
@@ -55,6 +55,7 @@ def create_dataset(num_As, data_config, run=0, matlab_engine=None):
         As_filename = f"data_dir/periodic_delaunay_num_As_{num_As}_num_points_{data_config.num_unknowns}" \
             f"_rnb_{data_config.root_num_blocks}_epoch_{run}.npy"
         np.save(As_filename, As)
+
     return create_dataset_from_As(As, data_config)
 
 
@@ -97,6 +98,7 @@ def create_dataset_from_As(As, data_config):
         baseline_P_list = [tf.convert_to_tensor(P.toarray(), dtype=tf.float64) for P in baseline_P_list]
         splittings = [solver.levels[0].splitting for solver in solvers]
         coarse_nodes_list = [np.nonzero(splitting)[0] for splitting in splittings]
+
     return DataSet(As, Ss, coarse_nodes_list, baseline_P_list)
 
 
@@ -391,13 +393,14 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_TEST', se
 
     # fix random seeds for reproducibility
     np.random.seed(seed)
-    tf.random.set_random_seed(seed)
+    tf.random.set_seed(seed)
     matlab_engine.eval(f'rng({seed})')
 
     batch_size = min(config.train_config.samples_per_run, config.train_config.batch_size)
 
     # we measure the performance of the model over time on one larger instance that is not optimized for
     eval_dataset = create_dataset(1, eval_config.data_config, matlab_engine=matlab_engine)
+
     eval_A_graphs_tuple = csrs_to_graphs_tuple(eval_dataset.As, matlab_engine,
                                                coarse_nodes_list=eval_dataset.coarse_nodes_list,
                                                baseline_P_list=eval_dataset.baseline_P_list,
@@ -471,10 +474,14 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_TEST', se
 
 
 if __name__ == '__main__':
-    tf_config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=True)
-    tf_config.gpu_options.allow_growth = True
-    tf.enable_eager_execution(config=tf_config)
+    # tf_config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=True)
+    # tf_config.gpu_options.allow_growth = True
+    # tf.enable_eager_execution(config=tf_config)
     # tf.enable_eager_execution(config=tf_config, allow_soft_placement=True, log_device_placement=True)
     # sess = tf.Session(config=tf_config, allow_soft_placement=True, log_device_placement=True)
+
+    gpu_devices = tf.config.experimental.list_physical_devices('GPU')
+    for device in gpu_devices:
+        tf.config.experimental.set_memory_growth(device, True)
 
     fire.Fire(train)

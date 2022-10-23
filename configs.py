@@ -77,6 +77,7 @@ class Config:
 
 
 GRAPH_LAPLACIAN_TEST = Config()
+GRAPH_LAPLACIAN_TEST.test_config.test_sizes = (1024, 2048)
 
 COMPLEX_FEM_TEST = Config()
 COMPLEX_FEM_TEST.test_config.dist = 'lognormal_complex_fem'
