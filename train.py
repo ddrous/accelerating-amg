@@ -243,6 +243,10 @@ def train_run(run_dataset, run, batch_size, config,
                                                     node_indicators=config.run_config.node_indicators,
                                                     edge_indicators=config.run_config.edge_indicators)
 
+        # print("GRAPH TUPLE SEE:", batch_A_graphs_tuple)
+        batch_P_graphs_tuple = model.apply(params, batch_A_graphs_tuple)
+        print("\n\n\n\n\nTEST SIZE::::\n\n\n\n", batch_P_graphs_tuple.edges.shape)
+
         frob_loss, grads = loss_grad_fn(params, model, batch_dataset, batch_A_graphs_tuple, batch_P_graphs_tuple,
                                 config.run_config, config.train_config, config.data_config)
         updates, opt_state = optimizer.update(grads, opt_state)
@@ -253,7 +257,6 @@ def train_run(run_dataset, run, batch_size, config,
         if batch % save_every == 0:
             checkpoint = save_model_and_optimizer(checkpoint_prefix, model, optimizer, global_step)
 
-        batch_P_graphs_tuple = model.apply(params, batch_A_graphs_tuple)
         M = select_example_M(batch_dataset, batch_A_graphs_tuple, batch_P_graphs_tuple,
                                 config.run_config, config.train_config, config.data_config)
         record_tb(M, run, num_As, batch, batch_size, frob_loss, grads, loop, model,
@@ -419,7 +422,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_TEST', se
 
     checkpoint_prefix = os.path.join(config.train_config.checkpoint_dir + '/' + run_name, 'ckpt')
     log_dir = config.train_config.tensorboard_dir + '/' + run_name
-    writer = tf.contrib.summary.create_file_writer(log_dir)
+    writer = tf.summary.create_file_writer(log_dir)
     writer.set_as_default()
 
     state = train_state.TrainState.create(apply_fn=model.apply,

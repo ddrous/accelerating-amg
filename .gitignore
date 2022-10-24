@@ -5,6 +5,7 @@ training_dir/*
 __pycache__/*
 
 data/*
+data_dir/*
 __pycache__/*
 tensorboard_dir/*
 train_checkpoints/*

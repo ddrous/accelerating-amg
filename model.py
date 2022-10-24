@@ -5,14 +5,17 @@ import tensorflow as tf
 from scipy.sparse import csr_matrix
 import jax
 import jax.numpy as jnp
+from jax import random
 import flax
 import optax
 import flax.linen as nn
 from flax.training import train_state, checkpoints
 import pyamg
+from clu import parameter_overview
 
 from data import As_poisson_grid
-from jraph_model import EncodeProcessDecodeNonRecurrent
+# from jraph_model import EncodeProcessDecodeNonRecurrent
+from flax_model import EncodeProcessDecodeNonRecurrent
 from utils import print_available_gpu
 
 def get_model(model_name, model_config, run_config, matlab_engine, train=False, train_config=None):
@@ -30,7 +33,6 @@ def get_model(model_name, model_config, run_config, matlab_engine, train=False, 
 
 def load_model(train_config, model_config, run_config, matlab_engine):
     model = create_model(model_config)
-
     ## Create a radom input: we have to use the model at least once to get the list of variables
     dummy_input = pyamg.gallery.poisson((7, 7), type='FE', format='csr')
     dummy_graph_tuple = csrs_to_graphs_tuple([dummy_input], 
@@ -41,9 +43,14 @@ def load_model(train_config, model_config, run_config, matlab_engine):
                                             edge_indicators=run_config.edge_indicators)
 
     # print_available_gpu(intro="\nAFTER GT")
+    # print("GRAPH TUPLE DUMMY:", dummy_graph_tuple)
 
     ## Randomly initialise the weights
-    params = model.init(jax.random.PRNGKey(0), dummy_graph_tuple)
+    rng = random.PRNGKey(0)
+    rng, key = random.split(rng)
+    # params = jax.jit(model.init)(key, dummy_graph_tuple)
+    params = model.init(key, dummy_graph_tuple)
+    parameter_overview.log_parameter_overview(params)
 
     decay_steps = 100
     decay_rate = 1.0
@@ -64,11 +71,21 @@ def load_model(train_config, model_config, run_config, matlab_engine):
 
 
 def create_model(model_config):
-    return EncodeProcessDecodeNonRecurrent(num_cores=model_config.mp_rounds, edge_output_size=1,
-                                            node_output_size=1, global_block=model_config.global_block,
-                                            latent_size=model_config.latent_size,
-                                            num_layers=model_config.mlp_layers,
-                                            concat_encoder=model_config.concat_encoder)
+    # return EncodeProcessDecodeNonRecurrent(num_cores=model_config.mp_rounds, edge_output_size=1,
+    #                                         node_output_size=1, global_block=model_config.global_block,
+    #                                         latent_size=model_config.latent_size,
+    #                                         num_layers=model_config.mlp_layers,
+    #                                         concat_encoder=model_config.concat_encoder)
+    return EncodeProcessDecodeNonRecurrent(
+                                          latent_size=model_config.latent_size,
+                                          num_mlp_layers=model_config.mlp_layers,
+                                          message_passing_steps=model_config.mp_rounds,
+                                          output_size=1,
+                                          dropout_rate=0,
+                                          skip_connections=model_config.concat_encoder,
+                                          layer_norm=True,
+                                          use_edge_model=True,
+                                          deterministic=True)
 
 
 def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_nodes_list=None, baseline_P_list=None,
@@ -151,7 +168,7 @@ def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_node
         )
         graphs_list.append(graph_tuple)
 
-    graphs_tuple = jraph.batch(graphs_list)
+    graphs_tuple = jraph.batch(graphs_list)   ## TODO Batch-size is 1, so nothing occurs. Don't use batch as it doesn't support jit
 
     if not node_indicators:
         graphs_tuple = set_zero_node_features(graphs_tuple, 1, dtype=dtype)
@@ -261,7 +278,9 @@ def to_prolongation_matrix_tensor(matrix, coarse_nodes, baseline_P, nodes,
 
 
 def graphs_tuple_to_sparse_matrices(graphs_tuple, return_nodes=False):
-    graphs = graphs_tuple.unbatch(graphs_tuple)
+    # graphs = graphs_tuple.unbatch(graphs_tuple)   ### TODO Always unbatch in a implicit way that allows jit
+    graphs = [graphs_tuple]
+
     matrices = [graphs_tuple_to_sparse_tensor(graph) for graph in graphs]
 
     if return_nodes:
