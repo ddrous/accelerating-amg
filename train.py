@@ -2,6 +2,7 @@ import copy
 import os
 import random
 import string
+from aiohttp import JsonPayload
 
 import fire
 import matlab.engine
@@ -13,6 +14,9 @@ from scipy.sparse import csr_matrix
 from tqdm import tqdm
 
 import jax
+import jax.numpy as jnp
+from jax.experimental.sparse import BCOO
+
 import flax
 import optax
 import flax.linen as nn
@@ -87,7 +91,7 @@ def create_dataset_from_As(As, data_config):
             A = As[i]
             C = orig_solvers[i].levels[0].C
             P = direct_interpolation(A, C, repeated_splitting)
-            baseline_P_list.append(tf.convert_to_tensor(P.toarray(), dtype=tf.float64))
+            baseline_P_list.append(jnp.array(P.toarray(), dtype=jnp.float64))
 
         coarse_nodes_list = [np.nonzero(splitting)[0] for splitting in splittings]
 
@@ -95,7 +99,7 @@ def create_dataset_from_As(As, data_config):
         solvers = [pyamg.ruge_stuben_solver(A, max_levels=2, keep=True, CF=data_config.splitting)
                    for A in As]
         baseline_P_list = [solver.levels[0].P for solver in solvers]
-        baseline_P_list = [tf.convert_to_tensor(P.toarray(), dtype=tf.float64) for P in baseline_P_list]
+        baseline_P_list = [jnp.array(P.toarray(), dtype=jnp.float64) for P in baseline_P_list]
         splittings = [solver.levels[0].splitting for solver in solvers]
         coarse_nodes_list = [np.nonzero(splitting)[0] for splitting in splittings]
 
@@ -115,7 +119,7 @@ def loss(params, model, dataset, A_graphs_tuple, P_graphs_tuple,
         block_Ss = relaxation_matrices([csr_matrix(A.numpy()) for block_A in block_As for A in block_A])
 
     batch_size = len(dataset.coarse_nodes_list)
-    total_norm = tf.Variable(0.0, dtype=tf.float64)
+    total_norm = jnp.array(0.0, dtype=jnp.float32)
     for i in range(batch_size):
         if train_config.fourier:
             num_blocks = data_config.root_num_blocks ** 2 - 1
@@ -129,20 +133,20 @@ def loss(params, model, dataset, A_graphs_tuple, P_graphs_tuple,
                                               normalize_rows_by_node=run_config.normalize_rows_by_node)
             block_P = block_diagonalize_P(P, data_config.root_num_blocks, coarse_nodes)
 
-            As = tf.stack(block_As[i])
-            Ps = tf.stack(block_P)
-            Rs = tf.transpose(Ps, perm=[0, 2, 1], conjugate=True)
-            Ss = tf.convert_to_tensor(block_Ss[num_blocks * i:num_blocks * (i + 1)])
+            As = jnp.stack(block_As[i])
+            Ps = jnp.stack(block_P)
+            Rs = jnp.transpose(Ps, perm=[0, 2, 1], conjugate=True)
+            Ss = jnp.array(block_Ss[num_blocks * i:num_blocks * (i + 1)])
 
             Ms = two_grid_error_matrices(As, Ps, Rs, Ss)
             M = Ms[-1]  # for logging
-            block_norms = tf.abs(frob_norm(Ms, power=1))
+            block_norms = jnp.abs(frob_norm(Ms, power=1))
 
-            block_max_norm = tf.reduce_max(block_norms)
+            block_max_norm = jnp.max(block_norms)
             total_norm = total_norm + block_max_norm
 
         else:
-            A = tf.sparse.to_dense(As[i])
+            A = As[i].todense()
             P_square = Ps_square[i]
             coarse_nodes = dataset.coarse_nodes_list[i]
             baseline_P = dataset.baseline_P_list[i]
@@ -150,8 +154,10 @@ def loss(params, model, dataset, A_graphs_tuple, P_graphs_tuple,
             P = to_prolongation_matrix_tensor(P_square, coarse_nodes, baseline_P, nodes,
                                               normalize_rows=run_config.normalize_rows,
                                               normalize_rows_by_node=run_config.normalize_rows_by_node)
-            R = tf.transpose(P)
-            S = tf.convert_to_tensor(dataset.Ss[i])
+            R = jnp.transpose(P)
+            S = jnp.array(dataset.Ss[i])
+            # relaxation_matrices([csr_matrix(A.numpy()) for block_A in block_As for A in block_A])
+            # print("\nSSSSS:", dataset.Ss)
 
             M = two_grid_error_matrix(A, P, R, S)
 
@@ -243,9 +249,7 @@ def train_run(run_dataset, run, batch_size, config,
                                                     node_indicators=config.run_config.node_indicators,
                                                     edge_indicators=config.run_config.edge_indicators)
 
-        # print("GRAPH TUPLE SEE:", batch_A_graphs_tuple)
         batch_P_graphs_tuple = model.apply(params, batch_A_graphs_tuple)
-        print("\n\n\n\n\nTEST SIZE::::\n\n\n\n", batch_P_graphs_tuple.edges.shape)
 
         frob_loss, grads = loss_grad_fn(params, model, batch_dataset, batch_A_graphs_tuple, batch_P_graphs_tuple,
                                 config.run_config, config.train_config, config.data_config)

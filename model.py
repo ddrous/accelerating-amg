@@ -6,6 +6,7 @@ from scipy.sparse import csr_matrix
 import jax
 import jax.numpy as jnp
 from jax import random
+from jax.experimental.sparse import BCOO
 import flax
 import optax
 import flax.linen as nn
@@ -38,7 +39,7 @@ def load_model(train_config, model_config, run_config, matlab_engine):
     dummy_graph_tuple = csrs_to_graphs_tuple([dummy_input], 
                                             matlab_engine, 
                                             coarse_nodes_list=np.array([[0, 1]]),
-                                            baseline_P_list=[tf.convert_to_tensor(dummy_input.toarray()[:, [0, 1]])],
+                                            baseline_P_list=[jnp.array(dummy_input.toarray()[:, [0, 1]])],
                                             node_indicators=run_config.node_indicators,
                                             edge_indicators=run_config.edge_indicators)
 
@@ -102,8 +103,8 @@ def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_node
     else:
         edge_encodings_list = []
         for csr, coarse_nodes, baseline_P in zip(csrs, coarse_nodes_list, baseline_P_list):
-            if tf.is_tensor(baseline_P):
-                baseline_P = csr_matrix(baseline_P.numpy())
+            if isinstance(baseline_P, jax.numpy.ndarray):
+                baseline_P = csr_matrix(np.array(baseline_P))
 
             baseline_P_rows, baseline_P_cols = P_square_sparsity_pattern(baseline_P, baseline_P.shape[0],
                                                                          coarse_nodes, matlab_engine)
@@ -179,10 +180,15 @@ def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_node
 
 
 def P_square_sparsity_pattern(P, size, coarse_nodes, matlab_engine):
+    # P_coo = BCOO.fromdense(P)
+    # P_rows = matlab.double((np.array(P_coo.indices[:,0], dtype=np.float64) + 1))
+    # P_cols = matlab.double((np.array(P_coo.indices[:,1], dtype=np.float64) + 1))
+    # P_values = matlab.double(np.array(P_coo.data, dtype=np.float64))
+    # coarse_nodes = matlab.double((np.array(coarse_nodes, dtype=np.float64) + 1))
     P_coo = P.tocoo()
     P_rows = matlab.double((np.float64(P_coo.row) + 1))
     P_cols = matlab.double((np.float64(P_coo.col) + 1))
-    P_values = matlab.double(P_coo.data)
+    P_values = matlab.double(np.float64(P_coo.data))
     coarse_nodes = matlab.double((np.float64(coarse_nodes) + 1))
     rows, cols = matlab_engine.square_P(P_rows, P_cols, P_values, size, coarse_nodes,  nargout=2)
     rows = np.array(rows._data).reshape(rows.size, order='F') - 1
@@ -197,14 +203,15 @@ def graphs_tuple_to_sparse_tensor(graphs_tuple):
     indices = tf.cast(tf.stack([senders, receivers], axis=1), tf.int64)
 
     # first element in the edge feature is the value, the other elements are metadata
-    values = tf.squeeze(graphs_tuple.edges[:, 0])
+    values = jnp.squeeze(graphs_tuple.edges[:, 0])
 
-    shape = tf.concat([graphs_tuple.n_node, graphs_tuple.n_node], axis=0)
-    shape = tf.cast(shape, tf.int64)
+    shape = jnp.concatenate([graphs_tuple.n_node, graphs_tuple.n_node], axis=0)
+    # shape = tf.cast(shape, tf.int64)
 
-    matrix = tf.sparse.SparseTensor(indices, values, shape)
+    matrix_uo = BCOO((values, indices), shape=shape)
     # reordering is required because the pyAMG coarsening step does not preserve indices order
-    matrix = tf.sparse.reorder(matrix)
+
+    matrix = BCOO.fromdense(matrix_uo.todense())    ### TODO dirty trick to reorder indices
 
     return matrix
 
@@ -245,35 +252,37 @@ def to_prolongation_matrix_csr(matrix, coarse_nodes, baseline_P, nodes, normaliz
 def to_prolongation_matrix_tensor(matrix, coarse_nodes, baseline_P, nodes,
                                   normalize_rows=True,
                                   normalize_rows_by_node=False):
-    dtype = tf.float64
-    matrix = tf.cast(matrix, dtype)
-    matrix = tf.sparse.to_dense(matrix)
+    dtype = jnp.float64
+    matrix = matrix.todense()
+    matrix = matrix.astype(dtype)
 
     # prolongation from coarse point to itself should be identity. This corresponds to 1's on the diagonal
-    matrix = tf.linalg.set_diag(matrix, tf.ones(matrix.shape[0], dtype=dtype))
+    diag_ind = jnp.diag_indices(matrix.shape[0])
+    matrix = matrix.at[diag_ind].set(jnp.ones(matrix.shape[0], dtype=dtype))
 
     # select only columns corresponding to coarse nodes
-    matrix = tf.gather(matrix, coarse_nodes, axis=1)
+    matrix = matrix[:, coarse_nodes]
 
     # set sparsity pattern (interpolatory sets) to be of baseline prolongation
-    baseline_zero_mask = tf.cast(tf.not_equal(baseline_P, tf.zeros_like(baseline_P)), dtype)
+    baseline_zero_mask = jnp.not_equal(baseline_P, jnp.zeros_like(baseline_P)).astype(dtype)
     matrix = matrix * baseline_zero_mask
 
     if normalize_rows:
         if normalize_rows_by_node:
             baseline_row_sum = nodes
         else:
-            baseline_row_sum = tf.reduce_sum(baseline_P, axis=1)
-        baseline_row_sum = tf.cast(baseline_row_sum, dtype)
+            baseline_row_sum = jnp.sum(baseline_P, axis=1)
+        baseline_row_sum = baseline_row_sum.astype(dtype)
 
-        matrix_row_sum = tf.reduce_sum(matrix, axis=1)
-        matrix_row_sum = tf.cast(matrix_row_sum, dtype)
+        matrix_row_sum = jnp.sum(matrix, axis=1)
+        matrix_row_sum = matrix_row_sum.astype(dtype)
 
         # there might be a few rows that are all 0's - corresponding to fine points that are not connected to any
         # coarse point. We use "divide_no_nan" to let these rows remain 0's
-        matrix = tf.math.divide_no_nan(matrix, tf.reshape(matrix_row_sum, (-1, 1)))
+        matrix = jnp.divide(matrix, jnp.reshape(matrix_row_sum, (-1, 1)))
+        matrix = jnp.nan_to_num(matrix, nan=0.0, posinf=0.0, neginf=0.0)
 
-        matrix = matrix * tf.reshape(baseline_row_sum, (-1, 1))
+        matrix = matrix * jnp.reshape(baseline_row_sum, (-1, 1))
     return matrix
 
 
@@ -284,7 +293,7 @@ def graphs_tuple_to_sparse_matrices(graphs_tuple, return_nodes=False):
     matrices = [graphs_tuple_to_sparse_tensor(graph) for graph in graphs]
 
     if return_nodes:
-        nodes_list = [tf.squeeze(graph.nodes) for graph in graphs]
+        nodes_list = [jnp.squeeze(graph.nodes) for graph in graphs]
         return matrices, nodes_list
     else:
         return matrices

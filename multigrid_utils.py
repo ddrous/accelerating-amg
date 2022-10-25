@@ -3,6 +3,7 @@ from functools import lru_cache
 import matlab.engine
 import numpy as np
 import pyamg
+import jax.numpy as jnp
 import scipy.linalg
 import tensorflow as tf
 from pyamg.classical import direct_interpolation
@@ -18,7 +19,7 @@ def frob_norm(a, power=1):
         curr_power = a
         for i in range(power - 1):
             curr_power = a @ curr_power
-        return tf.norm(curr_power, axis=[-2, -1]) ** (1 / power)
+        return jnp.linalg.norm(curr_power, ord='fro', axis=[-2, -1]) ** (1 / power)
 
 
 def compute_coarse_A(R, A, P):
@@ -51,9 +52,9 @@ def two_grid_error_matrices(padded_As, padded_Ps, padded_Rs, padded_Ss):
 
 
 def two_grid_error_matrix(A, P, R, S):
-    I = tf.eye(A.shape[0].value, dtype=A.dtype)
+    I = jnp.eye(A.shape[0], dtype=A.dtype)
     coarse_A = compute_coarse_A(R, A, P)
-    coarse_A_inv = tf.linalg.inv(coarse_A)
+    coarse_A_inv = jnp.linalg.inv(coarse_A)
     C = compute_C(A, I, P, R, coarse_A_inv)
     M = S @ C @ S
     return M
