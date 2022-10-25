@@ -14,12 +14,12 @@ from utils import chunks, most_frequent_splitting
 
 def frob_norm(a, power=1):
     if power == 1:
-        return tf.norm(a, axis=[-2, -1])
+        return jnp.linalg.norm(a, ord='fro', axis=(-2, -1))
     else:
         curr_power = a
-        for i in range(power - 1):
+        for _ in range(power - 1):
             curr_power = a @ curr_power
-        return jnp.linalg.norm(curr_power, ord='fro', axis=[-2, -1]) ** (1 / power)
+        return jnp.linalg.norm(curr_power, ord='fro', axis=(-2, -1)) ** (1 / power)
 
 
 def compute_coarse_A(R, A, P):
@@ -41,11 +41,15 @@ def compute_Cs(padded_As, Is, padded_Ps, padded_Rs, coarse_As_inv):
 
 
 def two_grid_error_matrices(padded_As, padded_Ps, padded_Rs, padded_Ss):
-    batch_size = padded_As.shape[0].value
-    padded_length = padded_As.shape[1].value
-    Is = tf.eye(padded_length, batch_shape=[batch_size], dtype=padded_As.dtype)
+    batch_size = padded_As.shape[0]
+    padded_length = padded_As.shape[1]
+    Is_list = []
+    for _ in range(batch_size):
+        I = jnp.eye(padded_length, dtype=padded_As.dtype)
+        Is_list.append(I)
+    Is = jnp.stack(Is_list)
     coarse_As = compute_coarse_As(padded_Rs, padded_As, padded_Ps)
-    coarse_As_inv = tf.linalg.inv(coarse_As)
+    coarse_As_inv = jnp.linalg.inv(coarse_As)
     Cs = compute_Cs(padded_As, Is, padded_Ps, padded_Rs, coarse_As_inv)
     Ms = padded_Ss @ Cs @ padded_Ss
     return Ms
@@ -87,7 +91,7 @@ def extract_diag_blocks(block_diag_As, block_size, root_num_blocks, single_matri
 def block_diagonalize_A_fast(As, root_num_blocks, tensor=False):
     """Returns root_num_blocks**2 matrices that represent the block diagonalization of A"""
     if tensor:
-        total_size = As.shape[1].value
+        total_size = As.shape[1]
     else:
         total_size = As.shape[1]
     block_size = total_size // root_num_blocks
@@ -106,10 +110,8 @@ def block_diagonalize_A_fast(As, root_num_blocks, tensor=False):
 
 def block_diagonalize_A_single(A, root_num_blocks, tensor=False):
     """Returns root_num_blocks**2 matrices that represent the block diagonalization of A"""
-    if tensor:
-        total_size = A.shape[0].value
-    else:
-        total_size = A.shape[0]
+
+    total_size = A.shape[0]
     block_size = total_size // root_num_blocks
 
     double_W, double_W_conj_t = create_double_W(block_size, root_num_blocks, tensor)
@@ -120,7 +122,7 @@ def block_diagonalize_A_single(A, root_num_blocks, tensor=False):
     blocks = blocks[1:]  # ignore zero mode block
 
     if tensor:
-        return tf.stack(blocks, axis=0)
+        return jnp.stack(blocks, axis=0)
     else:
         return [csr_matrix(block) for block_list in blocks for block in block_list]
 
@@ -155,9 +157,9 @@ def block_diagonalize_A(A, root_num_blocks):
 
 
 def pad_P(P, coarse_nodes):
-    total_size = P.shape[0].value
-    zero_column = tf.zeros([total_size], dtype=tf.float64)
-    P_cols = tf.unstack(P, axis=1)
+    total_size = P.shape[0]
+    zero_column = jnp.zeros([total_size], dtype=jnp.float64)
+    P_cols = jnp.split(P.T, P.shape[1])     ## Get cols
     full_P_cols = []
     curr_P_col = 0
     is_coarse = np.in1d(range(total_size), coarse_nodes, assume_unique=True)
@@ -167,10 +169,10 @@ def pad_P(P, coarse_nodes):
             curr_P_col += 1
         else:
             column = zero_column
-        full_P_cols.append(column)
+        full_P_cols.append(column.squeeze())
 
-    full_P = tf.transpose(tf.stack(full_P_cols))
-    full_P = tf.cast(full_P, tf.complex128)
+    full_P = jnp.transpose(jnp.stack(full_P_cols))
+    full_P = full_P.astype(jnp.complex128)
     return full_P
 
 
@@ -179,7 +181,7 @@ def block_diagonalize_P(P, root_num_blocks, coarse_nodes):
     Returns root_num_blocks**2 matrices that represent the block diagonalization of P
     Only works on block-periodic prolongation matrices
     """
-    total_size = P.shape[0].value
+    total_size = P.shape[0]
     block_size = total_size // root_num_blocks
 
     # we build the padded P matrix column by column, I couldn't find a more efficient way
@@ -193,7 +195,7 @@ def block_diagonalize_P(P, root_num_blocks, coarse_nodes):
     blocks = blocks[1:]  # ignore zero mode block
 
     block_coarse_nodes = coarse_nodes[:len(coarse_nodes) // root_num_blocks**2]
-    blocks = [tf.gather(block, block_coarse_nodes, axis=1) for block in blocks]
+    blocks = [block[:, block_coarse_nodes] for block in blocks]
 
     return blocks
 
@@ -237,7 +239,7 @@ def create_W_matrix(block_size, root_num_blocks, tensor=False):
     W_conj_t = W.conj().T
 
     if tensor:
-        W, W_conj_t = tf.convert_to_tensor(W), tf.convert_to_tensor(W_conj_t)
+        W, W_conj_t = jnp.array(W), jnp.array(W_conj_t)
     return W, W_conj_t
 
 
@@ -250,7 +252,7 @@ def create_double_W(block_size, root_num_blocks, tensor=False):
     double_W_conj_t = double_W.conj().T
 
     if tensor:
-        double_W, double_W_conj_t = tf.convert_to_tensor(double_W), tf.convert_to_tensor(double_W_conj_t)
+        double_W, double_W_conj_t = jnp.array(double_W), jnp.array(double_W_conj_t)
     return double_W, double_W_conj_t
 
 

@@ -51,6 +51,9 @@ def load_model(train_config, model_config, run_config, matlab_engine):
     rng, key = random.split(rng)
     # params = jax.jit(model.init)(key, dummy_graph_tuple)
     params = model.init(key, dummy_graph_tuple)
+
+    ## Print model in a table
+    model.tabulate(key, dummy_graph_tuple)
     parameter_overview.log_parameter_overview(params)
 
     decay_steps = 100
@@ -68,6 +71,7 @@ def load_model(train_config, model_config, run_config, matlab_engine):
 
     if latest_checkpoint is None:
         raise RuntimeError(f'training_dir {checkpoint_dir} does not exist')
+
     return model, latest_checkpoint.params, optimiser
 
 

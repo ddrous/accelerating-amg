@@ -29,7 +29,7 @@ from model import csrs_to_graphs_tuple, create_model, graphs_tuple_to_sparse_mat
 from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
     two_grid_error_matrix, compute_coarse_A
 from relaxation import relaxation_matrices
-from utils import create_results_dir, write_config_file, most_frequent_splitting, chunks, print_available_gpu
+from utils import create_results_dir, write_config_file, most_frequent_splitting, chunks, print_available_gpu, flatten_dict
 
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = "0"
@@ -114,9 +114,9 @@ def loss(params, model, dataset, A_graphs_tuple, P_graphs_tuple,
     Ps_square, nodes_list = graphs_tuple_to_sparse_matrices(P_graphs_tuple, True)
 
     if train_config.fourier:
-        As = [tf.cast(tf.sparse.to_dense(A), tf.complex128) for A in As]
+        As = [BCOO.todense(A).astype(jnp.complex128) for A in As]
         block_As = [block_diagonalize_A_single(A, data_config.root_num_blocks, tensor=True) for A in As]
-        block_Ss = relaxation_matrices([csr_matrix(A.numpy()) for block_A in block_As for A in block_A])
+        block_Ss = relaxation_matrices([csr_matrix(A) for block_A in block_As for A in block_A])
 
     batch_size = len(dataset.coarse_nodes_list)
     total_norm = jnp.array(0.0, dtype=jnp.float32)
@@ -135,7 +135,7 @@ def loss(params, model, dataset, A_graphs_tuple, P_graphs_tuple,
 
             As = jnp.stack(block_As[i])
             Ps = jnp.stack(block_P)
-            Rs = jnp.transpose(Ps, perm=[0, 2, 1], conjugate=True)
+            Rs = jnp.conjugate(jnp.transpose(Ps, axes=(0, 2, 1)))
             Ss = jnp.array(block_Ss[num_blocks * i:num_blocks * (i + 1)])
 
             Ms = two_grid_error_matrices(As, Ps, Rs, Ss)
@@ -164,20 +164,22 @@ def loss(params, model, dataset, A_graphs_tuple, P_graphs_tuple,
             norm = frob_norm(M, power=1)
             total_norm = total_norm + norm
 
-    return total_norm / batch_size, M  # M is chosen randomly - the last in the batch
+    return total_norm / batch_size
 
 
-def select_example_M(dataset, A_graphs_tuple, P_graphs_tuple,
+def select_example_M(params, model, dataset, A_graphs_tuple, P_graphs_tuple,
                     run_config, train_config, data_config):
+ 
     As = graphs_tuple_to_sparse_matrices(A_graphs_tuple)
+    P_graphs_tuple = model.apply(params, A_graphs_tuple)
     Ps_square, nodes_list = graphs_tuple_to_sparse_matrices(P_graphs_tuple, True)
 
     if train_config.fourier:
-        As = [tf.cast(tf.sparse.to_dense(A), tf.complex128) for A in As]
+        As = [BCOO.todense(A).astype(jnp.complex128) for A in As]
         block_As = [block_diagonalize_A_single(A, data_config.root_num_blocks, tensor=True) for A in As]
-        block_Ss = relaxation_matrices([csr_matrix(A.numpy()) for block_A in block_As for A in block_A])
+        block_Ss = relaxation_matrices([csr_matrix(A) for block_A in block_As for A in block_A])
 
-    batch_size = 1
+    batch_size = len(dataset.coarse_nodes_list)
     for i in range(batch_size):
         if train_config.fourier:
             num_blocks = data_config.root_num_blocks ** 2 - 1
@@ -191,16 +193,16 @@ def select_example_M(dataset, A_graphs_tuple, P_graphs_tuple,
                                               normalize_rows_by_node=run_config.normalize_rows_by_node)
             block_P = block_diagonalize_P(P, data_config.root_num_blocks, coarse_nodes)
 
-            As = tf.stack(block_As[i])
-            Ps = tf.stack(block_P)
-            Rs = tf.transpose(Ps, perm=[0, 2, 1], conjugate=True)
-            Ss = tf.convert_to_tensor(block_Ss[num_blocks * i:num_blocks * (i + 1)])
+            As = jnp.stack(block_As[i])
+            Ps = jnp.stack(block_P)
+            Rs = jnp.conjugate(jnp.transpose(Ps, axes=(0, 2, 1)))
+            Ss = jnp.array(block_Ss[num_blocks * i:num_blocks * (i + 1)])
 
             Ms = two_grid_error_matrices(As, Ps, Rs, Ss)
             M = Ms[-1]  # for logging
 
         else:
-            A = tf.sparse.to_dense(As[i])
+            A = As[i].todense()
             P_square = Ps_square[i]
             coarse_nodes = dataset.coarse_nodes_list[i]
             baseline_P = dataset.baseline_P_list[i]
@@ -208,20 +210,21 @@ def select_example_M(dataset, A_graphs_tuple, P_graphs_tuple,
             P = to_prolongation_matrix_tensor(P_square, coarse_nodes, baseline_P, nodes,
                                               normalize_rows=run_config.normalize_rows,
                                               normalize_rows_by_node=run_config.normalize_rows_by_node)
-            R = tf.transpose(P)
-            S = tf.convert_to_tensor(dataset.Ss[i])
+            R = jnp.transpose(P)
+            S = jnp.array(dataset.Ss[i])
 
             M = two_grid_error_matrix(A, P, R, S)
 
     return M  # M is chosen randomly - the last in the batch
 
 
-def save_model_and_optimizer(checkpoint_prefix, model, optimizer, global_step):
-    variables = model.get_all_variables()
-    variables_dict = {variable.name: variable for variable in variables}
-    checkpoint = tf.train.Checkpoint(**variables_dict, optimizer=optimizer, global_step=global_step)
-    checkpoint.save(file_prefix=checkpoint_prefix)
-    return checkpoint
+def save_model_and_optimizer(checkpoint_prefix, model, params, optimizer, global_step):
+    state = train_state.TrainState.create(apply_fn=model.apply,
+                                        params=params,
+                                        tx=optimizer)
+    chkp_name = checkpoints.save_checkpoint(ckpt_dir=checkpoint_prefix, target=state, step=global_step)
+
+    return chkp_name
 
 
 def train_run(run_dataset, run, batch_size, config,
@@ -256,75 +259,76 @@ def train_run(run_dataset, run, batch_size, config,
         updates, opt_state = optimizer.update(grads, opt_state)
         params = optax.apply_updates(params, updates)
 
-        print(f"frob loss: {frob_loss.numpy()}")
+        print(f"frob loss: {frob_loss}")
         save_every = max(1000 // batch_size, 1)
         if batch % save_every == 0:
-            checkpoint = save_model_and_optimizer(checkpoint_prefix, model, optimizer, global_step)
+            checkpoint = save_model_and_optimizer(checkpoint_prefix, model, params, optimizer, global_step)
 
-        M = select_example_M(batch_dataset, batch_A_graphs_tuple, batch_P_graphs_tuple,
+        M = select_example_M(params, model, batch_dataset, batch_A_graphs_tuple, batch_P_graphs_tuple,
                                 config.run_config, config.train_config, config.data_config)
-        record_tb(M, run, num_As, batch, batch_size, frob_loss, grads, loop, model,
-                  params, eval_dataset, eval_A_graphs_tuple, eval_config)
 
-        global_step.assign_add(batch_size)  # TODO: shouldn't this incremented by just 1 ?
+        record_tb(M, run, num_As, batch, batch_size, frob_loss, grads, loop, model,
+                  params, eval_dataset, eval_A_graphs_tuple, eval_config, global_step)
+
+        global_step += batch_size  # TODO: shouldn't this incremented by just 1 ?
 
     return checkpoint, global_step
 
 
-def record_tb_loss(frob_loss):
-    with tf.contrib.summary.record_summaries_every_n_global_steps(1):
-        tf.contrib.summary.scalar('loss', frob_loss)
+def record_tb_loss(frob_loss, global_step):
+    tf.summary.scalar('loss', frob_loss, step=global_step)
 
 
-def record_tb_params(batch_size, grads, loop, variables):
-    with tf.contrib.summary.record_summaries_every_n_global_steps(1):
-        if loop.avg_time is not None:
-            tf.contrib.summary.scalar('seconds_per_batch', tf.convert_to_tensor(loop.avg_time))
+def record_tb_params(batch_size, grads, loop, variables, global_step):
+    if loop.avg_time is not None:
+        tf.summary.scalar('seconds_per_batch', tf.convert_to_tensor(loop.avg_time), step=global_step)
 
-        for i in range(len(variables)):
-            variable = variables[i]
-            variable_name = variable.name
-            grad = grads[i]
-            if grad is not None:
-                tf.contrib.summary.scalar(variable_name + '_grad', tf.norm(grad) / batch_size)
-                tf.contrib.summary.histogram(variable_name + '_grad_histogram', grad / batch_size)
-                tf.contrib.summary.scalar(variable_name + '_grad_fraction_dead', tf.nn.zero_fraction(grad))
-                tf.contrib.summary.scalar(variable_name + '_value', tf.norm(variable))
-                tf.contrib.summary.histogram(variable_name + '_value_histogram', variable)
+    variables = flatten_dict(variables['params'])
+    grads = flatten_dict(grads['params'])
+
+    for variable_name, variable in variables.items():
+        grad = grads[variable_name]
+        if grad is not None:
+            tf.summary.scalar(variable_name + '_grad', tf.norm(grad) / batch_size, step=global_step)
+            tf.summary.histogram(variable_name + '_grad_histogram', grad / batch_size, step=global_step)
+            tf.summary.scalar(variable_name + '_grad_fraction_dead', tf.nn.zero_fraction(grad), step=global_step)
+            tf.summary.scalar(variable_name + '_value', tf.norm(variable), step=global_step)
+            tf.summary.histogram(variable_name + '_value_histogram', variable, step=global_step)
 
 
-def record_tb_spectral_radius(M, model, eval_dataset, eval_A_graphs_tuple, eval_config):
-    with tf.contrib.summary.record_summaries_every_n_global_steps(1):
-        spectral_radius = np.abs(np.linalg.eigvals(M.numpy())).max()
-        tf.contrib.summary.scalar('spectral_radius', spectral_radius)
+def record_tb_spectral_radius(M, model, params, eval_dataset, eval_A_graphs_tuple, eval_config, global_step):
+    spectral_radius = np.abs(np.linalg.eigvals(M)).max()
+    tf.summary.scalar('spectral_radius', spectral_radius, step=global_step)
 
-        with tf.device('/gpu:0'):
-            eval_P_graphs_tuple = model(eval_A_graphs_tuple)
-        eval_loss, eval_M = loss(eval_dataset, eval_A_graphs_tuple, eval_P_graphs_tuple,
-                                 eval_config.run_config,
-                                 eval_config.train_config,
-                                 eval_config.data_config)
+    eval_P_graphs_tuple = model.apply(params, eval_A_graphs_tuple)
+    eval_loss = loss(params, model, 
+                    eval_dataset, eval_A_graphs_tuple, eval_P_graphs_tuple,
+                    eval_config.run_config, eval_config.train_config, eval_config.data_config)
 
-        eval_spectral_radius = np.abs(np.linalg.eigvals(eval_M.numpy())).max()
-        tf.contrib.summary.scalar('eval_loss', eval_loss)
-        tf.contrib.summary.scalar('eval_spectral_radius', eval_spectral_radius)
+    eval_M  = select_example_M(params, model, 
+                                eval_dataset, eval_A_graphs_tuple, eval_P_graphs_tuple,
+                                eval_config.run_config, eval_config.train_config, eval_config.data_config)
+
+    eval_spectral_radius = np.abs(np.linalg.eigvals(eval_M)).max()
+    tf.summary.scalar('eval_loss', eval_loss, step=global_step)
+    tf.summary.scalar('eval_spectral_radius', eval_spectral_radius, step=global_step)
 
 
 def record_tb(M, run, num_As, batch, batch_size, frob_loss, grads, loop, model,
-              variables, eval_dataset, eval_A_graphs_tuple, eval_config):
+              variables, eval_dataset, eval_A_graphs_tuple, eval_config, global_step):
     batch = run * num_As + batch
 
     record_loss_every = max(1 // batch_size, 1)
     if batch % record_loss_every == 0:
-        record_tb_loss(frob_loss)
+        record_tb_loss(frob_loss, global_step)
 
     record_params_every = max(300 // batch_size, 1)
     if batch % record_params_every == 0:
-        record_tb_params(batch_size, grads, loop, variables)
+        record_tb_params(batch_size, grads, loop, variables, global_step)
 
     record_spectral_every = max(300 // batch_size, 1)
     if batch % record_spectral_every == 0:
-        record_tb_spectral_radius(M, model, eval_dataset, eval_A_graphs_tuple, eval_config)
+        record_tb_spectral_radius(M, model, variables, eval_dataset, eval_A_graphs_tuple, eval_config, global_step)
 
 
 def clone_model(model, model_config, run_config, matlab_engine):
@@ -433,7 +437,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_TEST', se
                                         params=params,
                                         tx=optimizer)
 
-    global_step = tf.Variable(0)
+    global_step = jnp.array(0)
     for run in range(config.train_config.num_runs):
         # we create the data before the training loop starts for efficiency,
         # at the loop we only slice batches and convert to tensors
