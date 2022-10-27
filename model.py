@@ -18,8 +18,18 @@ from data import As_poisson_grid
 # from jraph_model import EncodeProcessDecodeNonRecurrent
 from flax_model import EncodeProcessDecodeNonRecurrent
 from utils import print_available_gpu
+import copy
 
-def get_model(model_name, model_config, run_config, train_config, matlab_engine, train=False):
+
+def clone_model(model, params, model_config, run_config, matlab_engine):
+    clone = create_model(model_config)
+    _ = init_model(clone, run_config, matlab_engine)
+
+    return clone, copy.deepcopy(params)
+
+
+
+def get_model(model_config, run_config, train_config, matlab_engine, train=False):
     # dummy_input = As_poisson_grid(1, 7 ** 2)[0]
     # checkpoint_dir = './training_dir/' + model_name
     graph_model, params, optimiser = load_model(train_config, model_config,
@@ -31,9 +41,7 @@ def get_model(model_name, model_config, run_config, train_config, matlab_engine,
         return graph_model, params
 
 
-def load_model(train_config, model_config, run_config, matlab_engine, get_optimizer=False):
-    model = create_model(model_config)
-    ## Create a radom input: we have to use the model at least once to get the list of variables
+def init_model(model, run_config, matlab_engine):
     dummy_input = pyamg.gallery.poisson((7, 7), type='FE', format='csr')
     dummy_graph_tuple = csrs_to_graphs_tuple([dummy_input], 
                                             matlab_engine, 
@@ -41,19 +49,21 @@ def load_model(train_config, model_config, run_config, matlab_engine, get_optimi
                                             baseline_P_list=[jnp.array(dummy_input.toarray()[:, [0, 1]])],
                                             node_indicators=run_config.node_indicators,
                                             edge_indicators=run_config.edge_indicators)
-
-    # print_available_gpu(intro="\nAFTER GT")
-    # print("GRAPH TUPLE DUMMY:", dummy_graph_tuple)
-
     ## Randomly initialise the weights
     rng = random.PRNGKey(0)
     rng, key = random.split(rng)
-    # params = jax.jit(model.init)(key, dummy_graph_tuple)
     params = model.init(key, dummy_graph_tuple)
 
-    ## Print model in a table
+    ## Some printing
     model.tabulate(key, dummy_graph_tuple)
     parameter_overview.log_parameter_overview(params)
+
+    return params
+
+def load_model(train_config, model_config, run_config, matlab_engine, get_optimizer=False):
+    model = create_model(model_config)
+
+    params = init_model(model, run_config, matlab_engine)
 
     decay_steps = 100
     decay_rate = 1.0

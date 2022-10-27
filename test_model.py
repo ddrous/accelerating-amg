@@ -144,7 +144,7 @@ def test_model(model_name=None, test_config='GRAPH_LAPLACIAN_TEST', seed=1):
         run_config = configs.RunConfig(**data['run_config'])
         train_config = configs.TrainConfig(**data['train_config'])
 
-    model, params = get_model(model_name, model_config, run_config, train_config, matlab_engine, train=False)
+    model, params = get_model(model_config, run_config, train_config, matlab_engine, train=False)
 
     for size in test_config.test_sizes:
         test_size(model_name, model, params, size, test_config, run_config,

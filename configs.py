@@ -54,8 +54,8 @@ class TestConfig:
 
 
 class TrainConfig:
-    def __init__(self, samples_per_run=256, num_runs=100, batch_size=1, learning_rate=3e-3, fourier=True,
-                 coarsen=False, checkpoint_dir='./training_dir', tensorboard_dir='./tb_dir', load_model=True):
+    def __init__(self, samples_per_run=16, num_runs=1, batch_size=1, learning_rate=3e-4, fourier=True,
+                 coarsen=True, checkpoint_dir='./training_dir', tensorboard_dir='./tb_dir', load_model=True):
         self.samples_per_run = samples_per_run
         self.num_runs = num_runs
         self.batch_size = batch_size

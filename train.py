@@ -2,7 +2,13 @@ import copy
 import os
 import random
 import string
-from aiohttp import JsonPayload
+
+import jax
+import jax.numpy as jnp
+from jax.experimental.sparse import BCOO
+
+import optax
+from flax.training import train_state, checkpoints
 
 import fire
 import matlab.engine
@@ -13,19 +19,10 @@ from pyamg.classical import direct_interpolation
 from scipy.sparse import csr_matrix
 from tqdm import tqdm
 
-import jax
-import jax.numpy as jnp
-from jax.experimental.sparse import BCOO
-
-import flax
-import optax
-import flax.linen as nn
-from flax.training import train_state, checkpoints
-
 import configs
 from data import generate_A
 from dataset import DataSet
-from model import csrs_to_graphs_tuple, create_model, graphs_tuple_to_sparse_matrices, load_model, to_prolongation_matrix_tensor
+from model import csrs_to_graphs_tuple, clone_model, graphs_tuple_to_sparse_matrices, load_model, to_prolongation_matrix_tensor
 from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
     two_grid_error_matrix, compute_coarse_A
 from relaxation import relaxation_matrices
@@ -105,7 +102,6 @@ def create_dataset_from_As(As, data_config):
 
     return DataSet(As, Ss, coarse_nodes_list, baseline_P_list)
 
-
 def loss(params, model, dataset, A_graphs_tuple, P_graphs_tuple,
          run_config, train_config, data_config):
 
@@ -140,7 +136,7 @@ def loss(params, model, dataset, A_graphs_tuple, P_graphs_tuple,
 
             Ms = two_grid_error_matrices(As, Ps, Rs, Ss)
             M = Ms[-1]  # for logging
-            block_norms = jnp.abs(frob_norm(Ms, power=1))
+            block_norms = jnp.abs(frob_norm(Ms))
 
             block_max_norm = jnp.max(block_norms)
             total_norm = total_norm + block_max_norm
@@ -161,7 +157,7 @@ def loss(params, model, dataset, A_graphs_tuple, P_graphs_tuple,
 
             M = two_grid_error_matrix(A, P, R, S)
 
-            norm = frob_norm(M, power=1)
+            norm = frob_norm(M)
             total_norm = total_norm + norm
 
     return total_norm / batch_size
@@ -222,7 +218,7 @@ def save_model_and_optimizer(checkpoint_prefix, model, params, optimizer, global
     state = train_state.TrainState.create(apply_fn=model.apply,
                                         params=params,
                                         tx=optimizer)
-    chkp_name = checkpoints.save_checkpoint(ckpt_dir=checkpoint_prefix, target=state, step=global_step)
+    chkp_name = checkpoints.save_checkpoint(ckpt_dir=checkpoint_prefix, target=state, step=global_step, overwrite=True)
 
     return chkp_name
 
@@ -331,19 +327,6 @@ def record_tb(M, run, num_As, batch, batch_size, frob_loss, grads, loop, model,
         record_tb_spectral_radius(M, model, variables, eval_dataset, eval_A_graphs_tuple, eval_config, global_step)
 
 
-def clone_model(model, model_config, run_config, matlab_engine):
-    clone = create_model(model_config)
-
-    dummy_A = pyamg.gallery.poisson((7, 7), type='FE', format='csr')
-    dummy_input = csrs_to_graphs_tuple([dummy_A], matlab_engine, coarse_nodes_list=np.array([[0, 1]]),
-                                       baseline_P_list=[tf.convert_to_tensor(dummy_A.toarray()[:, [0, 1]])],
-                                       node_indicators=run_config.node_indicators,
-                                       edge_indicators=run_config.edge_indicators)
-    clone(dummy_input)
-    [var_clone.assign(var_orig) for var_clone, var_orig in zip(clone.get_all_variables(), model.get_all_variables())]
-    return clone, model.params
-
-
 def coarsen_As(fine_dataset, model, params, run_config, matlab_engine, batch_size=64):
     # computes the Galerkin operator P^(T)AP on each of the A matrices in a batch, using the Prolongation
     # outputted from the model
@@ -390,8 +373,8 @@ def coarsen_As(fine_dataset, model, params, run_config, matlab_engine, batch_siz
     return coarse_As
 
 
-def create_coarse_dataset(fine_dataset, model, params, data_config, run_config, matlab_engine):
-    As = coarsen_As(fine_dataset, model, params, run_config, matlab_engine)
+def create_coarse_dataset(fine_dataset, model, params, data_config, run_config, train_config, matlab_engine):
+    As = coarsen_As(fine_dataset, model, params, run_config, matlab_engine, batch_size=train_config.batch_size)
     return create_dataset_from_As(As, data_config)
 
 
@@ -444,7 +427,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_TEST', se
         run_dataset = create_dataset(config.train_config.samples_per_run, config.data_config,
                                      run=run, matlab_engine=matlab_engine)
 
-        checkpoint, global_step = train_run(run_dataset, run, batch_size, config,
+        _, global_step = train_run(run_dataset, run, batch_size, config,
                                model, params, optimizer, global_step,
                                checkpoint_prefix,
                                eval_dataset, eval_A_graphs_tuple, eval_config,
@@ -455,7 +438,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_TEST', se
         checkpoints.save_checkpoint(ckpt_dir=checkpoint_prefix, target=state, step=global_step)
 
     if config.train_config.coarsen:
-        old_model, old_params = clone_model(model, config.model_config, config.run_config, matlab_engine)
+        old_model, old_params = clone_model(model, params, config.model_config, config.run_config, matlab_engine)
 
         for run in range(config.train_config.num_runs):
             run_dataset = create_dataset(config.train_config.samples_per_run, config.data_config,
@@ -471,17 +454,18 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_TEST', se
             coarse_run_dataset = create_coarse_dataset(fine_run_dataset, old_model, old_params,
                                                        config.data_config,
                                                        config.run_config,
+                                                       config.train_config,
                                                        matlab_engine=matlab_engine)
 
             combined_run_dataset = run_dataset + coarse_run_dataset
             combined_run_dataset = combined_run_dataset.shuffle()
 
-            checkpoint = train_run(combined_run_dataset, run, batch_size, config,
+            _, global_step = train_run(combined_run_dataset, run, batch_size, config,
                                    model, params, optimizer, global_step,
                                    checkpoint_prefix,
                                    eval_dataset, eval_A_graphs_tuple, eval_config,
                                    matlab_engine)
-            checkpoint.save(file_prefix=checkpoint_prefix)
+            checkpoints.save_checkpoint(ckpt_dir=checkpoint_prefix, target=state, step=global_step)
 
 
 if __name__ == '__main__':

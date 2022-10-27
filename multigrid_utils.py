@@ -3,6 +3,7 @@ from functools import lru_cache
 import matlab.engine
 import numpy as np
 import pyamg
+import jax
 import jax.numpy as jnp
 import scipy.linalg
 import tensorflow as tf
@@ -11,15 +12,17 @@ from scipy.sparse import csr_matrix
 
 from utils import chunks, most_frequent_splitting
 
+@jax.jit
+def frob_norm(a):
+    return jnp.linalg.norm(a, ord='fro', axis=(-2, -1))
 
-def frob_norm(a, power=1):
-    if power == 1:
-        return jnp.linalg.norm(a, ord='fro', axis=(-2, -1))
-    else:
-        curr_power = a
-        for _ in range(power - 1):
-            curr_power = a @ curr_power
-        return jnp.linalg.norm(curr_power, ord='fro', axis=(-2, -1)) ** (1 / power)
+    # if power == 1:
+    #     return jnp.linalg.norm(a, ord='fro', axis=(-2, -1))
+    # else:
+    #     curr_power = a
+    #     for _ in range(power - 1):
+    #         curr_power = a @ curr_power
+    #     return jnp.linalg.norm(curr_power, ord='fro', axis=(-2, -1)) ** (1 / power)
 
 
 def compute_coarse_A(R, A, P):
@@ -54,7 +57,7 @@ def two_grid_error_matrices(padded_As, padded_Ps, padded_Rs, padded_Ss):
     Ms = padded_Ss @ Cs @ padded_Ss
     return Ms
 
-
+@jax.jit
 def two_grid_error_matrix(A, P, R, S):
     I = jnp.eye(A.shape[0], dtype=A.dtype)
     coarse_A = compute_coarse_A(R, A, P)

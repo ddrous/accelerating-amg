@@ -33,7 +33,7 @@ def precond_test(model_name=None, test_config='GRAPH_LAPLACIAN_TEST', seed=1):
         model_config = configs.ModelConfig(**data['model_config'])
         run_config = configs.RunConfig(**data['run_config'])
 
-    graph_model = get_model(model_name, model_config, run_config, matlab_engine)
+    graph_model = get_model(model_config, run_config, matlab_engine)
 
     max_levels = 2
     cycle = 'V'
