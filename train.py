@@ -322,11 +322,11 @@ def record_tb(M, run, num_As, batch, batch_size, frob_loss, grads, loop, model,
     if batch % record_loss_every == 0:
         record_tb_loss(frob_loss, global_step)
 
-    record_params_every = max(300 // batch_size, 1)
+    record_params_every = max(1 // batch_size, 1)
     if batch % record_params_every == 0:
         record_tb_params(batch_size, grads, loop, variables, global_step)
 
-    record_spectral_every = max(300 // batch_size, 1)
+    record_spectral_every = max(1 // batch_size, 1)
     if batch % record_spectral_every == 0:
         record_tb_spectral_radius(M, model, variables, eval_dataset, eval_A_graphs_tuple, eval_config, global_step)
 
@@ -490,6 +490,10 @@ if __name__ == '__main__':
     # tf.enable_eager_execution(config=tf_config)
     # tf.enable_eager_execution(config=tf_config, allow_soft_placement=True, log_device_placement=True)
     # sess = tf.Session(config=tf_config, allow_soft_placement=True, log_device_placement=True)
+
+    from jax.config import config
+    config.update("jax_enable_x64", True)
+    # config.update("jax_debug_nans", True)
 
     gpu_devices = tf.config.experimental.list_physical_devices('GPU')
     for device in gpu_devices:

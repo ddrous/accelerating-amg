@@ -19,20 +19,19 @@ from data import As_poisson_grid
 from flax_model import EncodeProcessDecodeNonRecurrent
 from utils import print_available_gpu
 
-def get_model(model_name, model_config, run_config, matlab_engine, train=False, train_config=None):
-    dummy_input = As_poisson_grid(1, 7 ** 2)[0]
-    checkpoint_dir = './training_dir/' + model_name
-    graph_model, optimizer, global_step = load_model(checkpoint_dir, dummy_input, model_config,
+def get_model(model_name, model_config, run_config, train_config, matlab_engine, train=False):
+    # dummy_input = As_poisson_grid(1, 7 ** 2)[0]
+    # checkpoint_dir = './training_dir/' + model_name
+    graph_model, params, optimiser = load_model(train_config, model_config,
                                                      run_config,
-                                                     matlab_engine, get_optimizer=train,
-                                                     train_config=train_config)
+                                                     matlab_engine, get_optimizer=train)
     if train:
-        return graph_model, optimizer, global_step
+        return graph_model, params, optimiser
     else:
-        return graph_model
+        return graph_model, params
 
 
-def load_model(train_config, model_config, run_config, matlab_engine):
+def load_model(train_config, model_config, run_config, matlab_engine, get_optimizer=False):
     model = create_model(model_config)
     ## Create a radom input: we have to use the model at least once to get the list of variables
     dummy_input = pyamg.gallery.poisson((7, 7), type='FE', format='csr')
@@ -278,13 +277,14 @@ def to_prolongation_matrix_tensor(matrix, coarse_nodes, baseline_P, nodes,
             baseline_row_sum = jnp.sum(baseline_P, axis=1)
         baseline_row_sum = baseline_row_sum.astype(dtype)
 
-        matrix_row_sum = jnp.sum(matrix, axis=1)
-        matrix_row_sum = matrix_row_sum.astype(dtype)
+        # matrix_row_sum = jnp.sum(matrix, axis=1)
+        # matrix_row_sum = matrix_row_sum.astype(dtype)
 
-        # there might be a few rows that are all 0's - corresponding to fine points that are not connected to any
-        # coarse point. We use "divide_no_nan" to let these rows remain 0's
-        matrix = jnp.divide(matrix, jnp.reshape(matrix_row_sum, (-1, 1)))
-        matrix = jnp.nan_to_num(matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        # # there might be a few rows that are all 0's - corresponding to fine points that are not connected to any
+        # # coarse point. We use "divide_no_nan" to let these rows remain 0's
+        # matrix_row_sum = jnp.where(matrix_row_sum==0.0, 1.0, matrix_row_sum)
+        # matrix = jnp.divide(matrix, jnp.reshape(matrix_row_sum, (-1, 1)))
+        # matrix = jnp.nan_to_num(matrix, nan=0.0, posinf=0.0, neginf=0.0)
 
         matrix = matrix * jnp.reshape(baseline_row_sum, (-1, 1))
     return matrix

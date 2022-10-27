@@ -14,8 +14,8 @@ from prolongation_functions import model, baseline
 from ruge_stuben_custom_solver import ruge_stuben_custom_solver
 
 
-def test_size(model_name, graph_model, size, test_config, run_config, matlab_engine):
-    model_prolongation = partial(model, graph_model=graph_model,
+def test_size(model_name, graph_model, params, size, test_config, run_config, matlab_engine):
+    model_prolongation = partial(model, graph_model=graph_model, params=params,
                                  normalize_rows_by_node=run_config.normalize_rows_by_node,
                                  edge_indicators=run_config.edge_indicators,
                                  node_indicators=run_config.node_indicators,
@@ -133,7 +133,7 @@ def test_model(model_name=None, test_config='GRAPH_LAPLACIAN_TEST', seed=1):
 
     # fix random seeds for reproducibility
     np.random.seed(seed)
-    tf.random.set_random_seed(seed)
+    tf.random.set_seed(seed)
     matlab_engine.eval(f'rng({seed})')
 
     test_config = getattr(configs, test_config).test_config
@@ -142,17 +142,22 @@ def test_model(model_name=None, test_config='GRAPH_LAPLACIAN_TEST', seed=1):
         data = json.load(f)
         model_config = configs.ModelConfig(**data['model_config'])
         run_config = configs.RunConfig(**data['run_config'])
+        train_config = configs.TrainConfig(**data['train_config'])
 
-    model = get_model(model_name, model_config, run_config, matlab_engine)
+    model, params = get_model(model_name, model_config, run_config, train_config, matlab_engine, train=False)
 
     for size in test_config.test_sizes:
-        test_size(model_name, model, size, test_config, run_config,
+        test_size(model_name, model, params, size, test_config, run_config,
                   matlab_engine)
 
 
 if __name__ == '__main__':
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    tf.enable_eager_execution(config=config)
+    from jax.config import config
+    config.update("jax_enable_x64", True)
+    # config.update("jax_debug_nans", True)
+
+    gpu_devices = tf.config.experimental.list_physical_devices('GPU')
+    for device in gpu_devices:
+        tf.config.experimental.set_memory_growth(device, True)
 
     fire.Fire(test_model)
