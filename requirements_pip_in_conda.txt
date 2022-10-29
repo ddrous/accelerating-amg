@@ -1,75 +1,115 @@
-absl-py==1.2.0
-astor==0.8.1
+absl-py @ file:///home/conda/feedstock_root/build_artifacts/absl-py_1665754496418/work
+aiohttp @ file:///home/conda/feedstock_root/build_artifacts/aiohttp_1649013154501/work
+aiosignal @ file:///home/conda/feedstock_root/build_artifacts/aiosignal_1636093929600/work
 astunparse==1.6.3
-attrs==22.1.0
-certifi==2020.6.20
-cloudpickle==1.1.1
+async-timeout @ file:///home/conda/feedstock_root/build_artifacts/async-timeout_1640026696943/work
+attrs @ file:///home/conda/feedstock_root/build_artifacts/attrs_1659291887007/work
+blinker @ file:///home/conda/feedstock_root/build_artifacts/blinker_1664823096650/work
+brotlipy @ file:///home/conda/feedstock_root/build_artifacts/brotlipy_1648854164373/work
+cached-property==1.5.2
+cachetools @ file:///home/conda/feedstock_root/build_artifacts/cachetools_1660055382950/work
+certifi==2022.9.24
+cffi @ file:///tmp/abs_98z5h56wf8/croots/recipe/cffi_1659598650955/work
+charset-normalizer @ file:///home/conda/feedstock_root/build_artifacts/charset-normalizer_1661170624537/work
+chex==0.1.5
+click @ file:///home/conda/feedstock_root/build_artifacts/click_1651215153723/work
+clu==0.0.7
+commonmark==0.9.1
 contextlib2==21.6.0
-dataclasses==0.8
-decorator==4.4.2
-dm-sonnet==1.36
+contourpy==1.0.5
+cryptography @ file:///home/conda/feedstock_root/build_artifacts/cryptography_1636040644060/work
+cycler==0.11.0
+dill==0.3.6
+dm-haiku==0.0.8
 dm-tree==0.1.7
+etils==0.8.0
 fire==0.4.0
-future==0.18.2
-gast==0.2.2
+flatbuffers==22.9.24
+flax==0.6.1
+fonttools==4.38.0
+frozenlist @ file:///tmp/build/80754af9/frozenlist_1637767113340/work
+gast==0.4.0
 gmsh-interop==2021.1.1
+google-auth @ file:///home/conda/feedstock_root/build_artifacts/google-auth_1666033103415/work
+google-auth-oauthlib @ file:///home/conda/feedstock_root/build_artifacts/google-auth-oauthlib_1630497468950/work
 google-pasta==0.2.0
-graph-nets==1.1.0
-grpcio==1.48.2
-h5py==2.10.0
-importlib-metadata==4.8.3
-importlib-resources==5.4.0
+googleapis-common-protos==1.56.4
+grpcio==1.49.1
+h5py==3.7.0
+idna @ file:///home/conda/feedstock_root/build_artifacts/idna_1663625384323/work
+importlib-metadata==5.0.0
+importlib-resources==5.10.0
 iniconfig==1.1.1
-joblib==1.1.1
-Keras-Applications==1.0.8
+jax==0.3.23
+jaxlib==0.3.22+cuda11.cudnn82
+jmp==0.0.2
+joblib==1.2.0
+jraph==0.0.6.dev0
+keras==2.10.0
 Keras-Preprocessing==1.1.2
-Markdown==3.3.7
-matlabengineforpython===R2019b
+kiwisolver==1.4.4
+libclang==14.0.6
+Markdown @ file:///home/conda/feedstock_root/build_artifacts/markdown_1657921053229/work
+MarkupSafe @ file:///home/conda/feedstock_root/build_artifacts/markupsafe_1648737556467/work
+matlabengineforpython===R2022a
+matplotlib==3.6.1
 MeshPy==2020.1
-networkx==2.5.1
-numpy==1.19.5
-nvidia-cublas-cu11==11.10.3.66
-nvidia-cuda-cupti-cu11==11.8.87
-nvidia-cuda-nvcc-cu11==11.8.89
-nvidia-cuda-runtime-cu11==11.8.89
-nvidia-cudnn-cu11==8.6.0.163
-nvidia-cufft-cu11==10.9.0.58
-nvidia-curand-cu11==10.3.0.86
-nvidia-cusolver-cu11==11.4.1.48
-nvidia-cusparse-cu11==11.7.4.91
-nvidia-dali-cuda110==1.16.0
-nvidia-dali-nvtf-plugin==1.16.0+nv22.8
-nvidia-horovod==0.25.0+nv22.8
-nvidia-nccl-cu11==2.14.3
-nvidia-pyindex==1.0.9
-nvidia-tensorflow==1.15.5+nv22.8
-nvidia-tensorrt==8.4.3.1
+ml-collections==0.1.1
+msgpack==1.0.4
+multidict @ file:///home/conda/feedstock_root/build_artifacts/multidict_1648882420423/work
+numpy==1.23.4
+nvidia-ml-py3==7.352.0
+oauthlib @ file:///home/conda/feedstock_root/build_artifacts/oauthlib_1666056362788/work
 opt-einsum==3.3.0
+optax==0.1.3
 packaging==21.3
-platformdirs==2.4.0
+pandas==1.5.0
+Pillow==9.2.0
+platformdirs==2.5.2
 pluggy==1.0.0
+promise==2.3
 protobuf==3.19.6
-psutil==5.9.2
 py==1.11.0
-pyamg==4.0.0
-pybind11==2.10.0
+pyamg==4.2.3
+pyasn1==0.4.8
+pyasn1-modules==0.2.8
+pycparser @ file:///home/conda/feedstock_root/build_artifacts/pycparser_1636257122734/work
+Pygments==2.13.0
+PyJWT @ file:///home/conda/feedstock_root/build_artifacts/pyjwt_1666240235902/work
+pyOpenSSL @ file:///home/conda/feedstock_root/build_artifacts/pyopenssl_1663846997386/work
 pyparsing==3.0.9
-pytest==7.0.1
+PySocks @ file:///home/conda/feedstock_root/build_artifacts/pysocks_1661604839144/work
+pytest==7.1.3
+python-dateutil==2.8.2
 pytools==2022.1.12
+pytz==2022.4
+pyu2f @ file:///home/conda/feedstock_root/build_artifacts/pyu2f_1604248910016/work
 PyYAML==6.0
-scikit-learn==0.24.2
-scipy==1.5.4
-semantic-version==2.10.0
-six==1.16.0
-tensorboard==1.15.0
-tensorflow-estimator==1.15.1
-tensorflow-gpu==1.15.5
-tensorflow-probability==0.8.0
-termcolor==1.1.0
+requests @ file:///home/conda/feedstock_root/build_artifacts/requests_1661872987712/work
+requests-oauthlib @ file:///home/conda/feedstock_root/build_artifacts/requests-oauthlib_1643557462909/work
+rich==12.6.0
+rsa @ file:///home/conda/feedstock_root/build_artifacts/rsa_1658328885051/work
+scikit-learn==1.1.2
+scipy==1.6.0
+six @ file:///home/conda/feedstock_root/build_artifacts/six_1620240208055/work
+tabulate==0.9.0
+tensorboard @ file:///home/conda/feedstock_root/build_artifacts/tensorboard_1664238338171/work/tensorboard-2.10.1-py3-none-any.whl
+tensorboard-data-server==0.6.1
+tensorboard-plugin-wit @ file:///home/conda/feedstock_root/build_artifacts/tensorboard-plugin-wit_1641458951060/work/tensorboard_plugin_wit-1.8.1-py3-none-any.whl
+tensorflow==2.10.0
+tensorflow-datasets==4.7.0
+tensorflow-estimator==2.10.0
+tensorflow-io-gcs-filesystem==0.27.0
+tensorflow-metadata==1.10.0
+termcolor==2.0.1
 threadpoolctl==3.1.0
-tomli==1.2.3
+toml==0.10.2
+tomli==2.0.1
+toolz==0.12.0
 tqdm==4.42.0
-typing_extensions==4.1.1
-Werkzeug==2.0.3
+typing_extensions @ file:///home/conda/feedstock_root/build_artifacts/typing_extensions_1665144421445/work
+urllib3==1.26.12
+Werkzeug @ file:///home/conda/feedstock_root/build_artifacts/werkzeug_1660053523487/work
 wrapt==1.14.1
-zipp==3.6.0
+yarl @ file:///home/conda/feedstock_root/build_artifacts/yarl_1648966524636/work
+zipp @ file:///home/conda/feedstock_root/build_artifacts/zipp_1665306627898/work
