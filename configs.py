@@ -54,7 +54,7 @@ class TestConfig:
 
 
 class TrainConfig:
-    def __init__(self, samples_per_run=16, num_runs=1, batch_size=1, learning_rate=3e-4, fourier=True,
+    def __init__(self, samples_per_run=256, num_runs=1000, batch_size=1, learning_rate=3e-4, fourier=True,
                  coarsen=True, checkpoint_dir='./training_dir', tensorboard_dir='./tb_dir', load_model=True):
         self.samples_per_run = samples_per_run
         self.num_runs = num_runs
@@ -75,6 +75,12 @@ class Config:
         self.test_config = TestConfig()
         self.train_config = TrainConfig()
 
+
+
+GRAPH_LAPLACIAN_TRAIN = Config()
+GRAPH_LAPLACIAN_TRAIN.data_config.dist = 'lognormal_laplacian_periodic'
+GRAPH_LAPLACIAN_TRAIN.data_config.block_periodic = False
+GRAPH_LAPLACIAN_TRAIN.train_config.fourier = False
 
 GRAPH_LAPLACIAN_TEST = Config()
 GRAPH_LAPLACIAN_TEST.test_config.test_sizes = (1024, 2048)
@@ -105,9 +111,6 @@ GRAPH_LAPLACIAN_SA_TEST.test_config.splitting = 'SA'
 GRAPH_LAPLACIAN_ROOTNODE_TEST = Config()
 GRAPH_LAPLACIAN_ROOTNODE_TEST.test_config.splitting = 'rootnode'
 
-
-GRAPH_LAPLACIAN_TRAIN = Config()
-GRAPH_LAPLACIAN_TRAIN.data_config.dist = 'lognormal_laplacian_periodic'
 
 GRAPH_LAPLACIAN_ABLATION_MP2 = Config()
 GRAPH_LAPLACIAN_ABLATION_MP2.data_config.dist = 'lognormal_laplacian_periodic'

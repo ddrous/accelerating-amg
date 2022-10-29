@@ -15,7 +15,8 @@ import matlab.engine
 import numpy as np
 import pyamg
 import tensorflow as tf
-from pyamg.classical import direct_interpolation
+# from pyamg.classical import direct_interpolation
+from pyamg.classical.interpolate import direct_interpolation
 from scipy.sparse import csr_matrix
 from tqdm import tqdm
 
@@ -88,6 +89,9 @@ def create_dataset_from_As(As, data_config):
             A = As[i]
             C = orig_solvers[i].levels[0].C
             P = direct_interpolation(A, C, repeated_splitting)
+
+            # print("dataset shape:", A.shape, A.indptr.shape, P.shape)
+
             baseline_P_list.append(jnp.array(P.toarray(), dtype=jnp.float64))
 
         coarse_nodes_list = [np.nonzero(splitting)[0] for splitting in splittings]
@@ -364,12 +368,13 @@ def coarsen_As(fine_dataset, model, params, run_config, matlab_engine, batch_siz
         coarse_nodes = coarse_nodes_list[i]
         baseline_P = baseline_P_list[i]
         P = to_prolongation_matrix_tensor(P_square, coarse_nodes, baseline_P, nodes)
-        R = tf.transpose(P)
+        R = jnp.transpose(P)
         A_csr = As[i]
-        A = tf.convert_to_tensor(A_csr.toarray(), dtype=tf.float64)
+        A = jnp.array(A_csr.toarray(), dtype=jnp.float64)
         tensor_coarse_A = compute_coarse_A(R, A, P)
-        coarse_A = csr_matrix(tensor_coarse_A.numpy())
+        coarse_A = csr_matrix(tensor_coarse_A)
         coarse_As.append(coarse_A)
+
     return coarse_As
 
 

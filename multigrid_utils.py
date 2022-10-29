@@ -7,12 +7,13 @@ import jax
 import jax.numpy as jnp
 import scipy.linalg
 import tensorflow as tf
-from pyamg.classical import direct_interpolation
+# from pyamg.classical import direct_interpolation
+from pyamg.classical.interpolate import direct_interpolation
 from scipy.sparse import csr_matrix
 
 from utils import chunks, most_frequent_splitting
 
-@jax.jit
+# @jax.jit
 def frob_norm(a):
     return jnp.linalg.norm(a, ord='fro', axis=(-2, -1))
 
@@ -57,7 +58,7 @@ def two_grid_error_matrices(padded_As, padded_Ps, padded_Rs, padded_Ss):
     Ms = padded_Ss @ Cs @ padded_Ss
     return Ms
 
-@jax.jit
+# @jax.jit
 def two_grid_error_matrix(A, P, R, S):
     I = jnp.eye(A.shape[0], dtype=A.dtype)
     coarse_A = compute_coarse_A(R, A, P)

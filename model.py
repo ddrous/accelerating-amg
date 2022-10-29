@@ -278,6 +278,7 @@ def to_prolongation_matrix_tensor(matrix, coarse_nodes, baseline_P, nodes,
 
     # set sparsity pattern (interpolatory sets) to be of baseline prolongation
     baseline_zero_mask = jnp.not_equal(baseline_P, jnp.zeros_like(baseline_P)).astype(dtype)
+    # print("Second check:", matrix.shape, baseline_zero_mask.shape)
     matrix = matrix * baseline_zero_mask
 
     if normalize_rows:
