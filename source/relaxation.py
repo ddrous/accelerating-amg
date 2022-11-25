@@ -24,6 +24,6 @@ def relaxation_matrices(As, tensor=False):
             res.append(scipy.linalg.solve_triangular(a=As[i].toarray(),         ## <---- MAKE THIS EFFICIENT
                                                      b=-Bs[i],
                                                      lower=True, unit_diagonal=False,
-                                                     overwrite_b=True, debug=None, check_finite=False).astype(
-                As[i].dtype))
+                                                #  overwrite_b=True, debug=None, check_finite=False).astype(As[i].dtype))## New Scipy!!!
+                                                     overwrite_b=True, check_finite=False).astype(As[i].dtype))
     return res

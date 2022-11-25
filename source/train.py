@@ -4,10 +4,16 @@ import random
 from sched import scheduler
 import string
 
-import fire
-import matlab.engine
-import numpy as np
 import torch
+
+import sys
+sys.path.append('/user/home/gb21553/Matlab/lib/')
+import matlab.engine
+import fire
+
+import numpy as np
+
+
 from torch.utils.tensorboard import SummaryWriter
 
 import pyamg
